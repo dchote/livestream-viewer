@@ -1,0 +1,22 @@
+#!/usr/bin/with-contenv bashio
+# shellcheck shell=bash
+set -e
+
+HTTP_PORT="$(bashio::config 'http_port')"
+LOG_LEVEL="$(bashio::config 'log_level')"
+DISPLAY_ENABLED="$(bashio::config 'display_enabled')"
+
+export LSV_HTTP_PORT="${HTTP_PORT:-8099}"
+export LSV_HTTP_BIND="0.0.0.0"
+export LSV_LOGGING_LEVEL="${LOG_LEVEL:-info}"
+export LSV_DATABASE_PATH="${LSV_DATABASE_PATH:-/data/livestream-viewer.sqlite}"
+export LSV_DATA_DIR="${LSV_DATA_DIR:-/data}"
+
+if bashio::var.true "${DISPLAY_ENABLED}"; then
+  export LSV_DISPLAY_ENABLED=true
+else
+  export LSV_DISPLAY_ENABLED=false
+fi
+
+bashio::log.info "Starting livestream-viewer on port ${LSV_HTTP_PORT}"
+exec /usr/bin/livestream-viewer -frontend-embed=true

@@ -1,0 +1,35 @@
+# https://developers.home-assistant.io/docs/add-ons/configuration
+name: livestream-viewer
+description: Native hardware-accelerated livestream viewer and video wall. REST API and web UI for management.
+version: "0.1.0"
+slug: livestream-viewer
+url: "https://github.com/dchote/livestream-viewer/tree/main/addon"
+arch:
+  - aarch64
+  - amd64
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:monitor-multiple
+startup: application
+boot: auto
+devices:
+  - /dev/dri
+video: true
+privileged:
+  - SYS_ADMIN
+map:
+  - addon_config:rw
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: Management UI and REST API (also used by ingress).
+options:
+  http_port: 8099
+  log_level: info
+  display_enabled: true
+schema:
+  http_port: int
+  log_level: list(debug|info|warn|error)
+  display_enabled: bool
+image: "ghcr.io/dchote/{arch}-addon-livestream-viewer"

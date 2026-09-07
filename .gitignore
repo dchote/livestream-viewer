@@ -1,6 +1,6 @@
 # Build output
 build/
-livestream-viewer
+/livestream-viewer
 !addon/rootfs/**
 dist/
 dist-amd64/

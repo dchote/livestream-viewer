@@ -1,6 +1,6 @@
 # Build and Test Guide
 
-> **Status:** Design. The scripts and targets described here do not exist yet; this documents the intended process so that scaffolding matches it.
+> **Status:** Scaffolded. `scripts/build.sh` and the Makefile exist for the control-plane framework. FFmpeg and SDL3 are not required until the display/decode stages land.
 
 ## Prerequisites
 

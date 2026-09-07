@@ -1,6 +1,8 @@
 # 0001: Project Scaffold and Implementation Roadmap
 
-## Status: Planned
+## Status: In Progress
+
+Stage 0 and the control-plane / UI / add-on **skeletons** from Stages 5–7 are delivered by [0002](0002-initial-codebase-framework.md). Display spikes (Stages 1–4) and full API/UI editors remain.
 
 ## Summary
 
@@ -9,6 +11,8 @@ The repository currently contains documentation and a licence. This document seq
 The guiding principle is to **prove the risky parts first**. Two things could invalidate the architecture, and both are cheap to test in isolation: whether SDL3 renders NV12 to a KMSDRM output on a Pi at all, and whether hardware decode is reachable through go-astiav on the target hardware. Everything else is conventional web application work that carries no architectural risk.
 
 ## Stage 0 — Repository Skeleton
+
+**Delivered by [0002](0002-initial-codebase-framework.md).**
 
 No behaviour, just structure.
 
@@ -70,6 +74,8 @@ Join the two spikes.
 
 ## Stage 5 — Persistence and API
 
+**Skeleton delivered by [0002](0002-initial-codebase-framework.md)** (SQLite, OpenAPI, stub handlers, Swagger, auth). Remaining: real CRUD, probing, SSE payloads, preview MJPEG, source resolver.
+
 - `internal/model`, `internal/database` — schema and migrations for the entities in [display-strategy-pattern.md](../patterns/display-strategy-pattern.md)
 - `internal/source` — registry, lifecycle, probing; `internal/source/resolver` for yt-dlp, direct, and file
 - `internal/rest`, `internal/handler` — full endpoint set, SSE hub, SPA handler
@@ -80,6 +86,8 @@ Join the two spikes.
 **Done when:** the entire display strategy can be built through the API and takes effect live, `/docs` is complete, and `openapi.yaml` matches every handler.
 
 ## Stage 6 — Frontend
+
+**Shell delivered by [0002](0002-initial-codebase-framework.md)** (theme, nav, page layouts, common components, embed). Remaining: PreviewCanvas, source forms, LayoutPicker, TileEditor, PlaylistEditor, TourEditor.
 
 - Vite, Vue 3, Vuetify 3, Pinia, file-based routing, `importMode: 'sync'`
 - Common components: StandardCard, StandardDialog, BackButton
@@ -92,6 +100,8 @@ Join the two spikes.
 **Done when:** every capability of the API is reachable from the UI, and the UI is usable with `-display=false` for development.
 
 ## Stage 7 — Packaging
+
+**Add-on scaffold delivered by [0002](0002-initial-codebase-framework.md)** (`addon/`, `repository.yaml`, Dockerfile). Remaining: GoReleaser `.deb`, DRM on HA OS, add-on image publish.
 
 - GoReleaser configs for `linux/amd64` and `linux/arm64`, plus `.deb` packages
 - `scripts/build-deb.sh` using goreleaser-cross in Docker

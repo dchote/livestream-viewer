@@ -1,6 +1,6 @@
 # Technical Overview
 
-> **Status:** Planning. This document describes the intended architecture. No code exists yet; treat every section as a design specification to be implemented and revised, not as a description of current behaviour.
+> **Status:** Framework scaffold in progress. The control plane, API shell, and embedded UI exist; treat display-engine and ingest sections as design specification until those stages land.
 
 livestream-viewer is a single Go binary that decodes live video streams with hardware acceleration and composites them onto a physically attached display using SDL3, while serving a Vue 3 + Vuetify management UI and REST API. The primary target is the Raspberry Pi 4 and 5 running headless (no X11, no Wayland, no desktop session).
 
@@ -300,7 +300,7 @@ SQLite via GORM. The schema is small:
 | `tile_sequences` | Per-tile source rotation within a grid cell |
 | `tour_entries` | Ordered screens with dwell time and transition |
 | `uploads` | Uploaded media file metadata |
-| `users` | Management UI accounts (bcrypt hashes) |
+| `users` | Management UI accounts (bcrypt hashes, roles `admin` and `user`) |
 
 Configuration changes are written to the database by the API handler, which then sends a reload command to the engine. The engine never reads the database directly — it is handed fully-resolved, immutable configuration snapshots.
 
@@ -311,6 +311,11 @@ Served on port `8099` by default (`LSV_HTTP_PORT`), alongside the embedded SPA.
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/health` | GET | Liveness and readiness |
+| `/api/v1/auth/login` | POST | JWT login |
+| `/api/v1/auth/me` | GET | Current user |
+| `/api/v1/auth/change-password` | POST | Change password (required when `must_change_password` is set) |
+| `/api/v1/users` | GET, POST | Admin-only user list and create |
+| `/api/v1/users/:id` | PATCH, DELETE | Admin-only role update and delete |
 | `/api/v1/system/info` | GET | Platform, decode capabilities, detected displays, version |
 | `/api/v1/sources` | GET, POST | Source list and create |
 | `/api/v1/sources/:id` | GET, PATCH, DELETE | Single source |
@@ -348,7 +353,8 @@ Navigation is deliberately shallow:
 Preview
 Settings
  ├── Stream Sources
- └── Display Strategy
+ ├── Display Strategy
+ └── Users (admin)
 ```
 
 The Display Strategy page is the substantial one. It lists screens, lets you create a grid screen (pick a layout, then assign a source to each cell with a visual layout picker) or a transition screen (build an ordered playlist with per-item dwell times and a transition), and then lets you order those screens into the tour.

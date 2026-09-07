@@ -1,6 +1,6 @@
 # Frontend Patterns Guide
 
-> **Status:** Design. Not yet implemented.
+> **Status:** Shell implemented (layouts, auth, users, settings placeholders). Full editors remain design until their feature stages.
 
 This document defines patterns and conventions for the Vue 3 + Vuetify 3 management frontend. All frontend code follows these conventions.
 
@@ -11,17 +11,22 @@ frontend/src/
 ├── layouts/            # DefaultLayout, AuthenticatedLayout
 ├── pages/              # Route components (file-based routing)
 │   ├── index.vue                    → /            (Preview)
+│   ├── login.vue                    → /login
+│   ├── change-password.vue          → /change-password
+│   ├── admin/
+│   │   └── users.vue                → /admin/users
 │   └── settings/
 │       ├── sources.vue              → /settings/sources
 │       └── display.vue              → /settings/display
 ├── components/
-│   ├── common/         # StandardCard, StandardDialog, BackButton
+│   ├── common/         # StandardCard, StandardDialog, BackButton, ListToolbar (detail pages)
+│   ├── admin/          # EditUserRoleDialog, CreateUserDialog
 │   ├── preview/        # PreviewCanvas, TileStatusList, DecoderHealth
 │   ├── sources/        # SourceForm, SourceList, SourceProbeChip, UploadDropzone
 │   └── display/        # LayoutPicker, TileEditor, PlaylistEditor, TransitionEditor, TourEditor
 ├── stores/             # Pinia stores
 ├── composables/        # useDisplayState, useEventStream, useLayouts
-├── utils/              # api.js, ingress.js, formatters
+├── utils/              # api.js, ingress.js, roles.js, formatters
 ├── plugins/            # vuetify, router, pinia
 ├── styles/             # theme.scss
 └── App.vue
@@ -29,16 +34,19 @@ frontend/src/
 
 ## Navigation
 
-Deliberately shallow — two primary items, one of which has two children.
+Deliberately shallow — Preview, Settings, and an admin-only Users item.
 
 ```
 Preview                  /
 Settings
  ├── Stream Sources      /settings/sources
- └── Display Strategy    /settings/display
+ ├── Display Strategy    /settings/display
+ └── Users (admin)       /admin/users
 ```
 
-Rendered as a `v-navigation-drawer` with a `v-list-group` for Settings. Settings is expanded by default when the current route is under `/settings`. Do not add a third top-level item without a strong reason; the value of this UI is that it is small.
+Rendered as a `v-navigation-drawer`. Settings is a labelled section, not a third top-level product area. Users sits with the other Settings items and is hidden unless `auth.isAdmin`.
+
+A first login (seeded admin, or any account an administrator just created) lands on `/change-password` until `must_change_password` is cleared. That page uses DefaultLayout so the rest of the app is not reachable until the password is changed.
 
 ## Page Responsibilities
 
@@ -90,17 +98,21 @@ Pages stay thin and compose shared components. Never duplicate card or dialog la
 
 ## Layout Structure
 
-- **AuthenticatedLayout** when authenticated: app bar, navigation drawer, user menu.
-- **DefaultLayout** for guests: app bar with a login CTA.
-- `App.vue` switches between them on auth state.
-- **Layouts must not add padding around the slot.** Each page uses `v-container`, which provides the page margins. Wrapping the slot in `pa-4` compounds with `v-container` and produces excessive outer margins.
+- **AuthenticatedLayout** when authenticated and the password does not need changing: app bar, navigation drawer, user menu.
+- **DefaultLayout** for guests and for the forced password-change screen.
+- `App.vue` switches between them on auth state (`isAuthenticated && !mustChangePassword`).
+- **Layouts must not add padding around the slot.** Each page uses `v-container` with class `page-content`, which provides the page margins. Wrapping the slot in `pa-4` compounds with `v-container` and produces excessive outer margins.
 
 ## File-Based Routing
 
 Routes are generated from `src/pages/` by `unplugin-vue-router`:
 
 - `src/pages/index.vue` → `/`
+- `src/pages/login.vue` → `/login`
+- `src/pages/change-password.vue` → `/change-password`
 - `src/pages/settings/sources.vue` → `/settings/sources`
+- `src/pages/settings/display.vue` → `/settings/display`
+- `src/pages/admin/users.vue` → `/admin/users`
 - Dynamic routes: `[id].vue` → `/:id`
 
 The Vite config uses `importMode: 'sync'` so route components are statically imported. This produces a single JS bundle and avoids chunk 404s when the frontend is embedded and served by the Go SPA handler.
@@ -117,7 +129,9 @@ Never poll. If a value is not on the event stream and it should be, add it there
 ## API and Error Handling
 
 - Centralised client in `utils/api.js`, JWT in the `Authorization` header.
-- On 401/403: clear auth and redirect to login.
+- On 401: clear auth and redirect to login.
+- On 403 `password_change_required`: redirect to `/change-password` without logging out.
+- Other 403 responses (insufficient role) stay on the page; surface them with `v-alert`.
 - Catch errors in components and surface them with `v-alert` on the parent page. Never `alert()`.
 - Log with a component prefix: `console.log('[SourceForm] API error:', error)`.
 

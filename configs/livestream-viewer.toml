@@ -1,0 +1,18 @@
+[database]
+path = "data/livestream-viewer.sqlite"
+
+[data]
+dir = "data"
+
+[http]
+port = 8099
+bind = "0.0.0.0"
+jwt_secret = ""
+
+[display]
+enabled = false
+driver = ""
+device = 0
+
+[logging]
+level = "info"

@@ -1,0 +1,12 @@
+configuration:
+  http_port:
+    name: HTTP port
+    description: Port for the management UI, REST API, and ingress.
+  log_level:
+    name: Log level
+    description: Structured log verbosity.
+  display_enabled:
+    name: Display engine
+    description: Start the display engine (requires DRM on the Pi). Leave on for a wall-mounted install.
+network:
+  8099/tcp: Management UI and REST API

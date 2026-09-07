@@ -1,0 +1,738 @@
+openapi: 3.0.3
+info:
+  title: livestream-viewer API
+  version: 0.1.0
+  description: |
+    REST API for livestream-viewer. The management UI is a consumer of this API.
+    Interactive docs are served at `/docs`.
+servers:
+  - url: /
+    description: This instance
+tags:
+  - name: system
+  - name: auth
+  - name: users
+  - name: sources
+  - name: uploads
+  - name: screens
+  - name: tour
+  - name: display
+  - name: catalogues
+  - name: config
+  - name: preview
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      tags: [system]
+      security: []
+      summary: Liveness and readiness
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  ready: { type: boolean }
+                  display: { type: boolean }
+  /api/v1/openapi.yaml:
+    get:
+      tags: [system]
+      security: []
+      summary: OpenAPI 3.0 specification
+      responses:
+        "200":
+          description: YAML specification
+          content:
+            application/x-yaml:
+              schema: { type: string }
+  /api/v1/auth/status:
+    get:
+      tags: [auth]
+      security: []
+      summary: Whether first-run setup is required
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup_required: { type: boolean }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Authenticate and receive a JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change the current user's password
+      description: Required after first login with the seeded admin, and after an administrator creates an account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, format: password, minLength: 8 }
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/users:
+    get:
+      tags: [users]
+      summary: List management users
+      description: Admin only.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [users]
+      summary: Create a management user
+      description: Admin only. The new user must change their password on first login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password, minLength: 8 }
+                role: { type: string, enum: [admin, user] }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    patch:
+      tags: [users]
+      summary: Update a user's role
+      description: Admin only. An administrator cannot change their own role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [admin, user] }
+      responses:
+        "204":
+          description: Role updated
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [users]
+      summary: Delete a management user
+      description: Admin only. An administrator cannot delete themselves.
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/system/info:
+    get:
+      tags: [system]
+      summary: Platform, decode capabilities, version
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string }
+                  commit: { type: string }
+                  build_time: { type: string }
+                  platform: { type: string }
+                  display_running: { type: boolean }
+                  display_enabled: { type: boolean }
+                  yt_dlp: { type: boolean }
+                  capabilities: { type: object }
+                  displays: { type: array, items: { type: object } }
+  /api/v1/layouts:
+    get:
+      tags: [catalogues]
+      summary: Layout catalogue with normalised cell geometry
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layouts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Layout" }
+  /api/v1/transitions:
+    get:
+      tags: [catalogues]
+      summary: Transition catalogue with valid subtypes
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transitions:
+                    type: array
+                    items: { $ref: "#/components/schemas/TransitionType" }
+                  easing_presets:
+                    type: array
+                    items: { $ref: "#/components/schemas/EasingPreset" }
+  /api/v1/config:
+    get:
+      tags: [config]
+      summary: Runtime configuration
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeConfig" }
+    patch:
+      tags: [config]
+      summary: Update runtime configuration
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RuntimeConfig" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeConfig" }
+  /api/v1/sources:
+    get:
+      tags: [sources]
+      summary: List sources
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items: { $ref: "#/components/schemas/Source" }
+    post:
+      tags: [sources]
+      summary: Create a source
+      responses:
+        "201":
+          description: Created
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/sources/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [sources]
+      summary: Get a source
+      responses:
+        "200":
+          description: OK
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [sources]
+      summary: Update a source
+      responses:
+        "200":
+          description: Updated
+        "501":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [sources]
+      summary: Delete a source
+      description: Refused if the source is referenced by a screen; the error details list those screens.
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/sources/{id}/probe:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      tags: [sources]
+      summary: Re-probe codec, resolution, hardware decode
+      responses:
+        "200":
+          description: Probe result
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/sources/{id}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [sources]
+      summary: Cached still for the UI
+      responses:
+        "200":
+          description: JPEG
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/uploads:
+    get:
+      tags: [uploads]
+      summary: List uploaded files
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploads:
+                    type: array
+                    items: { $ref: "#/components/schemas/Upload" }
+    post:
+      tags: [uploads]
+      summary: Upload a media file
+      responses:
+        "201":
+          description: Created
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/uploads/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    delete:
+      tags: [uploads]
+      summary: Remove an uploaded file
+      responses:
+        "204":
+          description: Deleted
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/screens:
+    get:
+      tags: [screens]
+      summary: List screens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  screens:
+                    type: array
+                    items: { $ref: "#/components/schemas/Screen" }
+    post:
+      tags: [screens]
+      summary: Create a screen
+      responses:
+        "201":
+          description: Created
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/screens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      tags: [screens]
+      summary: Get a screen including tiles and playlist items
+      responses:
+        "200":
+          description: OK
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [screens]
+      summary: Update a screen
+      responses:
+        "200":
+          description: Updated
+        "501":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [screens]
+      summary: Delete a screen
+      responses:
+        "204":
+          description: Deleted
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/tour:
+    get:
+      tags: [tour]
+      summary: The screen tour
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tour" }
+    put:
+      tags: [tour]
+      summary: Replace the screen tour
+      responses:
+        "200":
+          description: Updated
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/display/state:
+    get:
+      tags: [display]
+      summary: Current screen, tile status, fps, decoder health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisplayState" }
+  /api/v1/display/next:
+    post:
+      tags: [display]
+      summary: Advance the tour
+      responses:
+        "204":
+          description: Advanced
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/display/previous:
+    post:
+      tags: [display]
+      summary: Step back
+      responses:
+        "204":
+          description: Stepped
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/display/goto/{screenId}:
+    post:
+      tags: [display]
+      summary: Jump to a screen and pin it
+      parameters:
+        - name: screenId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Pinned
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/display/pause:
+    post:
+      tags: [display]
+      summary: Hold the tour
+      responses:
+        "204":
+          description: Paused
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/display/resume:
+    post:
+      tags: [display]
+      summary: Release the tour
+      responses:
+        "204":
+          description: Resumed
+        "501":
+          $ref: "#/components/responses/Error"
+  /api/v1/preview/stream:
+    get:
+      tags: [preview]
+      summary: MJPEG of the composited output
+      responses:
+        "200":
+          description: multipart MJPEG
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/preview/frame:
+    get:
+      tags: [preview]
+      summary: Single JPEG snapshot
+      responses:
+        "200":
+          description: JPEG
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/events:
+    get:
+      tags: [display]
+      summary: Server-Sent Events for display and decoder state
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        details: {}
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { type: string, enum: [admin, user] }
+        must_change_password: { type: boolean }
+    Layout:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        family: { type: string, enum: [equal, hotspot, vertical, panoramic] }
+        cells: { type: integer }
+        rects:
+          type: array
+          items:
+            type: object
+            properties:
+              x: { type: number }
+              y: { type: number }
+              w: { type: number }
+              h: { type: number }
+    TransitionType:
+      type: object
+      properties:
+        type: { type: string }
+        subtypes:
+          type: array
+          items: { type: string }
+        family: { type: string }
+        available: { type: boolean }
+        default_subtype: { type: string }
+    EasingPreset:
+      type: object
+      properties:
+        name: { type: string }
+        points:
+          type: array
+          items: { type: number }
+          minItems: 4
+          maxItems: 4
+    Transition:
+      type: object
+      properties:
+        type: { type: string }
+        subtype: { type: string }
+        duration_ms: { type: integer }
+        easing: { type: string }
+        color: { type: string, nullable: true }
+    RuntimeConfig:
+      type: object
+      properties:
+        id: { type: integer }
+        output_width: { type: integer }
+        output_height: { type: integer }
+        output_rotation: { type: integer }
+        default_dwell_ms: { type: integer }
+        default_transition: { type: string }
+        allow_software_fallback: { type: boolean }
+        max_hw_decoders: { type: integer }
+        reconnect_backoff_ms: { type: integer }
+        offline_grace_ms: { type: integer }
+        preview_fps: { type: integer }
+        preview_width: { type: integer }
+        placeholder_color: { type: string }
+        gutter_px: { type: integer }
+    Source:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind:
+          type: string
+          enum: [youtube, rtsp, hls, dash, http, srt, rtmp, file]
+        url: { type: string }
+        username: { type: string }
+        enabled: { type: boolean }
+        options: { type: string }
+        probe: { type: string }
+    Screen:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [grid, transition] }
+        layout: { type: string }
+        loop: { type: boolean }
+        tiles:
+          type: array
+          items: { $ref: "#/components/schemas/Tile" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PlaylistItem" }
+    Tile:
+      type: object
+      properties:
+        id: { type: integer }
+        index: { type: integer }
+        source_id: { type: integer, nullable: true }
+        fit: { type: string, enum: [contain, cover, fill] }
+    PlaylistItem:
+      type: object
+      properties:
+        id: { type: integer }
+        position: { type: integer }
+        source_id: { type: integer }
+        dwell_ms: { type: integer }
+        fit: { type: string, enum: [contain, cover, fill] }
+    Tour:
+      type: object
+      properties:
+        id: { type: integer }
+        enabled: { type: boolean }
+        loop: { type: boolean }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/TourEntry" }
+    TourEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        position: { type: integer }
+        screen_id: { type: integer }
+        dwell_ms: { type: integer }
+        transition: { type: string }
+    Upload:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        path: { type: string }
+        size: { type: integer }
+        mime_type: { type: string }
+    DisplayState:
+      type: object
+      properties:
+        display_running: { type: boolean }
+        paused: { type: boolean }
+        pinned: { type: boolean }
+        active_screen: { type: integer, nullable: true }
+        next_screen: { type: integer, nullable: true }
+        dwell_remaining_ms: { type: integer }
+        fps: { type: number }
+        tiles:
+          type: array
+          items: { type: object }

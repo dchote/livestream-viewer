@@ -2,7 +2,7 @@
 
 **livestream-viewer** turns a Raspberry Pi into a dedicated, always-on video wall. It renders one or more live streams directly to an attached display using hardware-accelerated decoding and GPU compositing, and it is configured entirely from a web interface. There is no desktop environment, no browser, and no window manager involved — the application owns the display.
 
-**Status: Planning** — This repository currently contains documentation only. No implementation exists yet.
+**Status: Framework scaffold in progress** — The control plane, embedded UI, and add-on files can be built and run. Display engine and stream decode are not implemented yet.
 
 The project is structured as two cooperating planes inside a single Go binary: a **display engine** that decodes and composites video onto the physical output, and a **control plane** (REST API plus embedded Vue 3 + Vuetify UI) that manages sources, layouts, and scheduling. Like [go-mumble-server](https://github.com/dchote/go-mumble-server), the repository doubles as a Home Assistant add-on repository, so it can be installed on a Home Assistant OS Pi in one click.
 
@@ -57,7 +57,7 @@ Every transition has a duration and an easing curve. Easing is expressed as CSS-
 The web UI has two primary navigation items:
 
 - **Preview** — A live representation of what the physical display is currently showing, including which screen is active, which tile holds which source, and the health of each decoder. This is a monitoring view, not a second renderer: it shows a throttled, downscaled read-back of the actual composited output so that what you see is what is on the wall.
-- **Settings** — Split into **Stream Sources** (add, edit, probe, and upload) and **Display Strategy** (build screens, arrange tiles or playlists, and order the tour).
+- **Settings** — **Stream Sources** (add, edit, probe, and upload), **Display Strategy** (build screens, arrange tiles or playlists, and order the tour), and for administrators **Users** (RBAC accounts for the management UI).
 
 The UI is built with Vue 3 and Vuetify 3 and is embedded in the Go binary, so there is nothing separate to deploy.
 

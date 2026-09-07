@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bashio
+# shellcheck shell=bash
+if [ "${1}" -eq 256 ]; then
+  bashio::log.warning "livestream-viewer crashed; waiting 5s"
+  exec /run/s6/basedir/bin/halt
+fi
+exit 0

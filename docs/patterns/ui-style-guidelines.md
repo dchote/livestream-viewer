@@ -1,12 +1,14 @@
 # UI Style and Guidelines
 
-> **Status:** Design. Not yet implemented.
+> **Status:** Implemented for the management UI shell. Domain editors (layout picker, tile editor) land with later stages.
 
 This document defines the visual design standards for the livestream-viewer management frontend. All UI follows these guidelines for consistency.
 
 ## Design Philosophy
 
-Material Design 3 palette, minimal and professional. This is an operations tool that may be left open on a second monitor, so it avoids flashy gradients and uses subtle depth where appropriate. Video content is the only thing on screen that should draw the eye.
+Material Design 3 palette, matching [go-mumble-server](https://github.com/dchote/go-mumble-server). This is an operations tool that may be left open on a second monitor. Card chrome uses the shared blue header gradient; video content is still the only thing that should dominate the Preview canvas.
+
+Page shell density (`v-container.page-content`) follows the 8wi interior-page pattern: modest top/bottom padding, no stacked `py-8`.
 
 ## Layout and Structure Rules
 
@@ -30,6 +32,9 @@ Material Design 3 palette, minimal and professional. This is an operations tool 
 
 - All dialogs use **StandardDialog** with title, content slot, and actions slot. Never raw `v-dialog`.
 - Actions slot: `v-spacer`, then Cancel and the primary action. `mr-2` on the first button.
+- **Mobile**: pass `:fullscreen="mobile"` from `useDisplay()` so form and confirm dialogs fill the viewport below the mobile breakpoint.
+- Validation and API errors for a dialog belong **inside** that dialog (`v-alert`), not on the parent page behind it.
+- Prefer local form state in the dialog component; emit a single `save` payload on success path.
 
 ## Color Palette
 
@@ -43,7 +48,18 @@ Defined in `frontend/src/styles/theme.scss` and `frontend/src/plugins/vuetify.js
 - **Error**: Red (#F44336)
 - **Background/Surface**: Theme-driven (light grey / dark)
 
-**Dark theme is the default.** This application is normally used to configure a screen in a room, often a dim one, and it displays video thumbnails that read better against a dark surface.
+**Dark theme is the default.** Light and dark palettes match go-mumble-server: dark-mode primary is `#42A5F5`, light-mode primary is `#1976D2`.
+
+### Card chrome
+
+StandardCard and StandardDialog use the go-mumble-server chrome:
+
+- Sharp corners (`border-radius: 0`)
+- 3px Material Blue top border
+- Header band: light-mode gradient `#1976D2 → #1565C0 → #2196F3`; dark-mode `#0D47A1 → #1565C0 → #1976D2`
+- White title text in light mode; `on-surface` in dark mode
+
+Do not use `variant="outlined"` on StandardCard — the theme supplies the border.
 
 ## Typography
 
@@ -58,7 +74,7 @@ Defined in `frontend/src/styles/theme.scss` and `frontend/src/plugins/vuetify.js
 ### Page Layout
 
 - **Main content**: Layouts must **not** add padding around the slot. Use `v-main` with the slot as a direct child.
-- **Page padding**: Each page uses `v-container`, which provides responsive horizontal padding and max width. This is the single source of page margins — do not compound it with layout-level padding.
+- **Page padding**: Each page uses `v-container` with class `page-content`. That is the single source of page margins — do not compound it with layout-level padding or `py-8`.
 
 ### Content Padding
 
@@ -86,7 +102,7 @@ Defined in `frontend/src/styles/theme.scss` and `frontend/src/plugins/vuetify.js
 
 ### Cards
 
-- `v-card` with `variant="outlined"` or `variant="flat"`.
+- `v-card` with the StandardCard chrome (gradient header). Nested cards use `brand-section-card`.
 - Add a divider under `v-card-title` when using a raw `v-card`.
 - **`v-card-text` has built-in padding** — do not add `pa-4` or similar.
 

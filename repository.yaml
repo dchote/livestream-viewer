@@ -1,0 +1,4 @@
+# https://developers.home-assistant.io/docs/add-ons/repository#repository-configuration
+name: livestream-viewer
+url: "https://github.com/dchote/livestream-viewer"
+maintainer: "Daniel Chote <https://github.com/dchote>"

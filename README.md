@@ -4,7 +4,16 @@ A native, hardware-accelerated livestream viewer and video wall for the Raspberr
 
 Configured entirely from an embedded Vue 3 + Vuetify web interface. Installable as a Home Assistant add-on.
 
-> **Status: Planning.** This repository currently contains documentation only. No implementation exists yet. See [docs/features/0001-project-scaffold.md](docs/features/0001-project-scaffold.md) for the roadmap.
+> **Status: Framework scaffold in progress.** The control plane, embedded management UI, Swagger, and Home Assistant add-on files can be built and run on macOS. Display engine and stream decode are not implemented yet. See [docs/features/0002-initial-codebase-framework.md](docs/features/0002-initial-codebase-framework.md) and the [roadmap](docs/features/0001-project-scaffold.md).
+
+## Development (macOS)
+
+```bash
+./scripts/build.sh
+./build/livestream-viewer -display=false
+```
+
+The management UI is at `http://127.0.0.1:8099` (first-run login `admin` / `admin`). Swagger is at `/docs`. For hot reload, run the server with `-frontend-embed=false` and `cd frontend && yarn dev`.
 
 ## Overview
 
