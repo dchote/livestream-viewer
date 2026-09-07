@@ -1,0 +1,47 @@
+---
+description: Use the established CCTV/VMS and SMPTE vocabulary for layouts, scheduling, and transitions
+globs: internal/**/*.go,frontend/src/**/*.{vue,js},api/*.yaml,docs/**/*.md
+alwaysApply: false
+---
+
+# Domain Terminology
+
+This project reuses the vocabulary of CCTV video management systems and broadcast production rather than inventing its own. Use these terms in code, API fields, UI labels, and documentation.
+
+## Core Terms
+
+| Use | Not |
+|-----|-----|
+| **Tile** (a layout cell) | "slot" — taken by the frame slot in the video pipeline |
+| **Screen** (one composition of the output) | "scene" — taken by the compositor's per-frame draw list |
+| **Tour** (screens cycling) | "rotation" — means display orientation |
+| **Sequence** (sources cycling within one tile) | "carousel", "cycle" |
+| **Dwell time** | "interval", "hold time", "duration" |
+| **Source** | "channel" — means something different in NVR products |
+| **Hotspot** (the large tile in a 1+N layout) | "primary", "main" |
+
+## The Three Timing Concepts Are Distinct
+
+Never conflate these. They are the most common source of confusion in this domain.
+
+- **Sequence** — sources cycling **within a single tile**
+- **Playlist** — sources cycling **as the full output** (a transition screen)
+- **Tour** — whole **screens** cycling
+
+**Dwell time excludes transition duration.**
+
+## Transitions
+
+Names follow SMPTE 258M as codified by the W3C SMIL transition module, with a `type` / `subtype` split: `cut`, `fade`, `barWipe`, `boxWipe`, `barnDoorWipe`, `irisWipe`, `ellipseWipe`, `clockWipe`, `pushWipe`, `slideWipe`. Do not invent new names or rename these to something friendlier.
+
+**Push and slide are different transitions.** In a *push*, the outgoing image is shoved off-screen by the incoming one and both layers move. In a *slide*, the incoming image moves over a stationary outgoing one. Vendors are sloppy about this; we are not.
+
+Easing follows CSS: named presets stored as `cubic-bezier` control points.
+
+## New Terminology
+
+If a change introduces a domain term that is not already in the glossary, add it there in the same change.
+
+## Reference
+
+[docs/reference/glossary.md](docs/reference/glossary.md)

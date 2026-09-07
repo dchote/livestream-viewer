@@ -1,0 +1,41 @@
+---
+description: Form input components must use density=compact and hide-details=auto
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# Form Input Standards
+
+All Vuetify input components must use **compact density** and **hide-details="auto"**.
+
+## Required Props
+
+| Prop | Value |
+|------|-------|
+| `density` | `"compact"` |
+| `hide-details` | `"auto"` |
+| `variant` | `"outlined"` |
+| `autocomplete` | `"off"` on every non-auth text field |
+
+## Exceptions
+
+- Login/register may use `density="comfortable"` for accessibility
+- Auth forms use `autocomplete="username"`, `"current-password"`, or `"new-password"`
+
+## Duration Fields
+
+Durations are stored in milliseconds. Always label the unit explicitly — `Dwell time (seconds)`, not `Dwell time`.
+
+```vue
+<!-- ✅ GOOD -->
+<v-text-field
+  variant="outlined"
+  density="compact"
+  hide-details="auto"
+  autocomplete="off"
+/>
+
+<!-- ❌ BAD -->
+<v-text-field density="comfortable" ... />
+<v-text-field />  <!-- missing hide-details -->
+```

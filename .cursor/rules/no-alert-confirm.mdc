@@ -1,0 +1,35 @@
+---
+description: NEVER use alert() or confirm(); use v-alert and StandardDialog instead
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# No alert() or confirm()
+
+**Never use `alert()` or `confirm()`.** Use in-app components instead.
+
+## Pattern
+
+### Feedback
+Use `v-alert` on the parent page with `type="error"` or `type="success"`, `density="compact"`, `class="mb-4"`.
+
+### Confirmations
+Use `StandardDialog` with Cancel and primary action buttons. Never use raw `v-dialog`.
+
+```vue
+<!-- ✅ GOOD -->
+<v-alert v-if="error" type="error" density="compact" class="mb-4">{{ error }}</v-alert>
+
+<StandardDialog v-model="showConfirm" title="Delete screen?" max-width="400">
+  <p>Are you sure?</p>
+  <template #actions>
+    <v-spacer />
+    <v-btn variant="text" class="mr-2" @click="showConfirm = false">Cancel</v-btn>
+    <v-btn color="error" variant="elevated" @click="doDelete">Delete</v-btn>
+  </template>
+</StandardDialog>
+
+<!-- ❌ BAD -->
+confirm('Are you sure?')
+alert('Error!')
+```

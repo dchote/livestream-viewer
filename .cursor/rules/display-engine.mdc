@@ -1,0 +1,46 @@
+---
+description: Thread ownership and non-blocking rules for the display engine and render loop
+globs: internal/display/**/*.go,internal/frame/**/*.go,internal/schedule/**/*.go,cmd/**/*.go
+alwaysApply: false
+---
+
+# Display Engine Rules (MANDATORY)
+
+The render loop runs on the process's main OS thread, pinned with `runtime.LockOSThread()` for the process lifetime. On a Raspberry Pi it holds DRM master. These rules are not stylistic.
+
+## Thread Ownership
+
+1. **SDL is called only from the render thread.** No exceptions — not from an HTTP handler, not from a decode worker, not "just to grab a screenshot". Anything that needs display data reads the published state snapshot instead.
+2. **Texture uploads are render-thread only.** `SDL_UpdateNVTexture` and friends cannot be moved off it.
+3. **Every decode worker calls `runtime.LockOSThread()`** and unlocks on exit. libav calls are cgo and long-running; leaving them on scheduler threads produces erratic latency across the whole process.
+
+## The Loop Never Blocks
+
+4. **No blocking operations in the render loop.** No database, no network, no filesystem, no subprocess, no channel receive without a `default`, no mutex that another plane can hold.
+5. **The engine never reads the database.** The control plane resolves configuration into an immutable `strategy.Snapshot` and sends it over the command channel.
+6. **Bound every per-frame operation.** Command drains, scene size, and texture allocation all need ceilings so one frame cannot stretch indefinitely.
+7. **Pump the SDL event queue every iteration.** Under KMSDRM, failing to do so produces a black screen with no error.
+
+## State Exchange
+
+8. **Commands carry immutable values**, never a pointer to state the sender will keep mutating.
+9. **Published state is replaced, not mutated.** Build a new struct and `Store` it through the `atomic.Pointer`.
+10. **Frame slots hold the newest frame only.** Triple-buffered, lock-free, no queue. A queue lets the renderer fall behind permanently.
+11. **Unbind before teardown.** The engine releases a slot before the worker owning it is cancelled, so the renderer can never sample buffers being freed.
+
+## Correctness
+
+12. **Animation progress comes from the wall clock, never a frame counter.** A frame-counted transition changes speed exactly when frames drop, which is when it is most visible.
+13. **Round tile geometry to whole pixels.** Sub-pixel edges shimmer on a static wall.
+14. **Set the texture colorspace explicitly.** YUV textures default to `SDL_COLORSPACE_JPEG` (full-range BT.601); most real video is limited-range BT.709. Use `SDL_CreateTextureWithProperties` with `SDL_PROP_TEXTURE_CREATE_COLORSPACE_NUMBER`.
+15. **Every libav allocation has a matching unref**, established at the allocation site with `defer`. Leaked `AVFrame`/`AVPacket` references are invisible until the process is out of memory.
+
+## Degrade, Never Stall
+
+16. A missing frame holds the last one; a failed texture shows a placeholder; an unavailable shader falls back to `fade`. **Nothing stops the loop.** Record every degradation in the state snapshot so the UI can surface it.
+
+## Reference
+
+- [docs/patterns/render-loop-pattern.md](docs/patterns/render-loop-pattern.md)
+- [docs/patterns/concurrent-state-pattern.md](docs/patterns/concurrent-state-pattern.md)
+- [docs/architecture/display-pipeline.md](docs/architecture/display-pipeline.md)

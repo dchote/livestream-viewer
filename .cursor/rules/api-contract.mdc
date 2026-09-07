@@ -1,0 +1,28 @@
+---
+description: REST handler changes must be reflected in api/openapi.yaml in the same change
+globs: internal/handler/**/*.go,internal/rest/**/*.go,api/*.yaml
+alwaysApply: false
+---
+
+# API Contract
+
+`api/openapi.yaml` is hand-maintained and **is** the contract. It is served at `/docs` via Swagger UI and at `/api/v1/openapi.yaml`.
+
+## Rules
+
+1. **Any handler change updates `openapi.yaml` in the same commit.** New endpoint, new field, changed status code, changed error shape — all of it.
+2. **Never generate the spec from code or code from the spec.** It is reviewed as documentation.
+3. **Error responses use one shape** across every endpoint. Do not invent a per-handler error format.
+4. **Reference conflicts return the referencing entities.** Deleting a source that is used by a screen returns the list of referencing screens so the UI can offer to clear them, not a bare 409.
+5. **Live state goes on the SSE stream** (`GET /api/v1/events`), not into a polled endpoint. If the frontend needs a value repeatedly, add it to the event payload.
+
+## Layout Geometry
+
+`GET /api/v1/layouts` returns normalised cell rectangles in the unit square. This is the **single source of truth** shared by the display engine, the API, and the frontend layout picker.
+
+**Never hard-code layout geometry in the frontend.** If the picker and the engine disagree about what `1+5` means, that is exactly the bug this shared representation exists to prevent.
+
+## Reference
+
+- [docs/technical-overview.md](docs/technical-overview.md#rest-api)
+- [docs/patterns/display-strategy-pattern.md](docs/patterns/display-strategy-pattern.md)

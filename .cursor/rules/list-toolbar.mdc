@@ -1,0 +1,25 @@
+---
+description: Use toolbar pattern for filters and list controls
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# List Toolbar Pattern
+
+For list pages with filters or controls, group them in a toolbar area below the card header.
+
+## Principles
+
+- Place filters/controls in a dedicated toolbar section (between header and content)
+- Use `v-spacer` to push actions to the right
+- Use explicit margins (`mr-2`, `mb-2`) — never `gap`
+- Filters should auto-apply with debouncing; avoid requiring an Apply button
+- Add/Create buttons belong in the **section header**, right-aligned — not in the toolbar and never below the list
+
+## Form Inputs in Toolbar
+
+- `variant="outlined"`
+- `density="compact"`
+- `hide-details="auto"`
+- `class="mr-2"` between inputs
+- `style="max-width: 200px;"` or similar for fixed-width filters

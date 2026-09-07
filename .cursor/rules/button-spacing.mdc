@@ -1,0 +1,19 @@
+---
+description: NEVER place adjacent buttons without margin; always use mr-2 on first button
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# Button Spacing (MANDATORY)
+
+**Every pair of adjacent buttons MUST have spacing.** Add `class="mr-2"` to the first/left button.
+
+```vue
+<!-- ✅ GOOD -->
+<v-btn class="mr-2">Cancel</v-btn>
+<v-btn color="primary">Save</v-btn>
+
+<!-- ❌ BAD -->
+<v-btn>Cancel</v-btn>
+<v-btn>Save</v-btn>
+```

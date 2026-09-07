@@ -1,0 +1,54 @@
+# Build output
+build/
+livestream-viewer
+!addon/rootfs/**
+dist/
+dist-amd64/
+dist-arm64/
+
+# Go
+*.exe
+*.test
+*.out
+*.prof
+
+# Dependencies
+vendor/
+node_modules/
+
+# Frontend build artifacts
+frontend/dist/
+cmd/livestream-viewer/frontend-dist/
+
+# Data
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+data/
+uploads/
+
+# Keys and secrets
+*.pem
+*.key
+*.crt
+!configs/*.example.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+__debug_bin*
+*.log
+
+# Research (reference implementations, not part of the project)
+research/

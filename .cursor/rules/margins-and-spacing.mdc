@@ -1,0 +1,32 @@
+---
+description: ALWAYS use appropriate margins when creating components or doing form layouts
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# Margins and Spacing
+
+**Always use appropriate margins** for consistent spacing. Do NOT use `gap`.
+
+## Quick Reference
+
+| Context | Class |
+|---------|-------|
+| Between form fields | `mb-4` |
+| Before action buttons | `mt-4` |
+| **Between grouped buttons** | **`mr-2`** on first button |
+| **Between chips** | **`mr-2 mb-2`** on each chip |
+
+## Button Rule (MANDATORY)
+
+Add `class="mr-2"` to the first/left button in any button group.
+
+```vue
+<!-- ✅ GOOD -->
+<v-btn class="mr-2">Cancel</v-btn>
+<v-btn color="primary">Save</v-btn>
+
+<!-- ❌ BAD -->
+<v-btn>Cancel</v-btn>
+<v-btn>Save</v-btn>
+```

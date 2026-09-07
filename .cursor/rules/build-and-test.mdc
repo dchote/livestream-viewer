@@ -1,0 +1,50 @@
+---
+description: Build and test process for livestream-viewer
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Build and Test
+
+## Build Commands
+
+- **Server only (fast):** `SKIP_FRONTEND=true ./scripts/build.sh` or `CGO_ENABLED=1 go build ./cmd/livestream-viewer`
+- **Full build:** `./scripts/build.sh` (requires Node/Yarn, creates `frontend-dist`)
+
+**Never** build with `-tags embed_frontend` unless `cmd/livestream-viewer/frontend-dist/` exists and contains files. The `//go:embed` will fail on an empty or missing directory.
+
+**Never** use plain `GOARCH=arm64 go build` to target the Pi. CGO needs a cross toolchain plus the target's FFmpeg and SDL3 headers. Use `./scripts/build-deb.sh`, which builds in a `linux/arm64` container.
+
+## Test Commands
+
+Always use a timeout to avoid hanging:
+
+```bash
+CGO_ENABLED=1 go test -timeout=30s ./...
+```
+
+With race detector (use 60s timeout):
+
+```bash
+CGO_ENABLED=1 go test -race -timeout=60s ./...
+```
+
+Race detection is **mandatory** for the lock-free frame handoff:
+
+```bash
+CGO_ENABLED=1 go test -race -timeout=60s ./internal/frame/... ./internal/display/...
+```
+
+## Rules
+
+1. **CGO_ENABLED=1** — Required for SQLite and the FFmpeg bindings
+2. **Timeout on tests** — Use `-timeout=30s` (or `60s` with `-race`) to prevent hangs
+3. **Do not run the application for validation** — Use `go build` and `go test` only. The binary takes the main OS thread and, on a Pi, DRM master
+4. **Do not start the display engine in a unit test** — The layout solver, transitions, scheduler, and compositor are all designed to be testable without SDL
+5. **SDL-dependent tests go behind the `sdl` build tag** and are excluded from the default run. CI has no display
+6. **No tests that open network streams** — Use recorded fixtures or a synthetic source
+7. **Do not assume frontend-dist exists** — Use `SKIP_FRONTEND=true` or run the full build first
+
+## Reference
+
+See [docs/build-and-test.md](docs/build-and-test.md) for full documentation, including the FFmpeg and SDL3 dependency setup and the Raspberry Pi black-screen troubleshooting list.
