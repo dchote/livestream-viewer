@@ -1,6 +1,6 @@
 # Frontend Patterns Guide
 
-> **Status:** Shell implemented (layouts, auth, users, settings placeholders). Full editors remain design until their feature stages.
+> **Status:** Implemented for the management UI, including Stream Sources and Display Strategy editors. Preview MJPEG of composited output waits on the display engine; the Preview page uses a client-side layout diagram until then.
 
 This document defines patterns and conventions for the Vue 3 + Vuetify 3 management frontend. All frontend code follows these conventions.
 
@@ -19,11 +19,10 @@ frontend/src/
 │       ├── sources.vue              → /settings/sources
 │       └── display.vue              → /settings/display
 ├── components/
-│   ├── common/         # StandardCard, StandardDialog, BackButton, ListToolbar (detail pages)
+│   ├── common/         # StandardCard, StandardDialog, PasswordField (ListToolbar/BackButton optional stubs)
 │   ├── admin/          # EditUserRoleDialog, CreateUserDialog
-│   ├── preview/        # PreviewCanvas, TileStatusList, DecoderHealth
 │   ├── sources/        # SourceForm, SourceList, SourceProbeChip, UploadDropzone
-│   └── display/        # LayoutPicker, TileEditor, PlaylistEditor, TransitionEditor, TourEditor
+│   └── display/        # LayoutPicker, TileEditor, PlaylistEditor, TransitionEditor, ScreensEditor, TourEditor, LayoutDiagram
 ├── stores/             # Pinia stores
 ├── composables/        # useDisplayState, useEventStream, useLayouts
 ├── utils/              # api.js, ingress.js, roles.js, formatters
@@ -54,7 +53,7 @@ A first login (seeded admin, or any account an administrator just created) lands
 
 A monitoring view, not a second renderer. It shows what the physical display is actually doing:
 
-- **PreviewCanvas** — The MJPEG stream from `GET /api/v1/preview/stream`, in the output's aspect ratio. When the display engine is not running, it falls back to a client-side diagram drawn from `GET /api/v1/layouts` plus per-source thumbnails, with a clear "engine not running" notice. The Settings pages must remain fully usable in that state.
+- **Layout diagram** — Until the display engine runs, Preview draws a client-side diagram from `GET /api/v1/layouts` plus scheduler tile names, with a clear "engine not running" notice. `GET /api/v1/preview/stream` stays `503 engine_not_running`. The Settings pages remain fully usable in that state. MJPEG of composited output is a later stage.
 - **Active screen indicator** — Which screen is showing, what is next, and where the tour is in its dwell.
 - **Tile status** — Per tile: source name, decoder state, resolution, whether it is on hardware or software decode.
 - **Manual controls** — Previous, Next, Pause/Resume, and jump-to-screen. These map to the `POST /api/v1/display/*` endpoints.
@@ -63,7 +62,7 @@ Live data comes from the SSE stream, never from polling. See `useEventStream`.
 
 ### Stream Sources (`/settings/sources`)
 
-A list of sources with an "Add Source" button right-aligned in the section header. Each row shows name, kind, probe summary (codec, resolution, frame rate), decode path, and status.
+A list of sources with an "Add Source" button right-aligned in the section header. Each row shows name, kind, probe summary (codec, resolution, frame rate), decode path, and status. Row actions are right-aligned on one line: **Probe** as text, Edit/Delete as icon buttons. On mobile the Probe summary column is hidden.
 
 - Adding a source opens a StandardDialog whose fields change with the selected `kind`. YouTube shows a notice if `yt-dlp` is unavailable, read from `GET /api/v1/system/info`.
 - **Probe** is an explicit action per source, and its result is what makes the UI honest about capacity. Show the decode path (hardware or software) prominently — this is the number a user needs before building a nine-tile grid.
@@ -72,13 +71,10 @@ A list of sources with an "Add Source" button right-aligned in the section heade
 
 ### Display Strategy (`/settings/display`)
 
-The substantial page. Three sections, each with its own header and right-aligned action button:
+The substantial page. Two sections, each with its own header and right-aligned action button:
 
-1. **Screens** — List of defined screens with kind, layout or item count, and a preview thumbnail. "Add Screen" in the header.
-2. **Screen editor** — Opens on selecting a screen.
-   - *Grid*: **LayoutPicker** shows the catalogue grouped by family (Equal, Hotspot, Vertical, Panoramic), rendering each option from the same normalised geometry the engine uses. Selecting a layout renders **TileEditor**, a clickable diagram where each cell opens a source picker and a fit selector. A cell can hold a single source or a sequence.
-   - *Transition*: **PlaylistEditor**, a drag-reorderable list of sources with per-item dwell time and fit, plus a **TransitionEditor** for the transition between items.
-3. **Tour** — **TourEditor**, a drag-reorderable list of screens with dwell time and the transition played when entering each one.
+1. **Screens** — **ScreensEditor**. Empty state when none exist. Otherwise one **`v-expansion-panel` per screen** (`multiple`, `flat`, `variant="accordion"`, all collapsed by default). Titles summarize name, kind, and layout/item count; expand to edit. Grid uses LayoutPicker + TileEditor; transition uses PlaylistEditor + TransitionEditor. Per-panel **Save** (enabled only when dirty); collapsing discards unsaved edits. Delete on the title. Add Screen creates a new collapsed panel.
+2. **Tour** — **TourEditor**. If there are no screens yet, the card only shows a prerequisite empty state (no Add/Save). Otherwise: tour-level Enabled/Loop, then one **`v-expansion-panel` per entry** (`multiple`, `flat`, `variant="accordion"`, all collapsed by default). Panel titles summarize screen, dwell, and transition; expand to edit those fields and the incoming transition. Add Entry appends a new collapsed panel. Card footer **Save** is enabled only when the tour is dirty.
 
 **TransitionEditor** reads `GET /api/v1/transitions` for valid type/subtype combinations and never offers a transition the platform reports as unavailable. Easing is chosen from the named presets with an option to enter explicit cubic Bézier control points, and the curve is drawn.
 
@@ -88,7 +84,7 @@ Pages stay thin and compose shared components. Never duplicate card or dialog la
 
 - **StandardCard** (`components/common/StandardCard.vue`) — Page layout card with title and header, toolbar, content, and actions slots.
 - **StandardDialog** (`components/common/StandardDialog.vue`) — Modal with header, content, and actions. Used for every dialog, including confirmations. Never use raw `v-dialog`.
-- **BackButton** (`components/common/BackButton.vue`) — Icon-only back button for card headers, with a `fallback` route.
+- **PasswordField** (`components/common/PasswordField.vue`) — Show/hide password input used everywhere credentials are collected.
 
 ## Header Rules
 
@@ -149,9 +145,14 @@ Under ingress the app is served from `/api/hassio_ingress/<token>/`, so nothing 
 - `variant="outlined"`
 - `density="compact"` (login and register may use `comfortable` for accessibility)
 - `hide-details="auto"`
-- `autocomplete` is **required on every text field**: `autocomplete="off"` on all non-auth fields; `username`, `current-password`, or `new-password` on auth forms only
-- `class="mr-2"` between inputs
-- `style="max-width: 320px;"` for fixed-width inputs
+- `autocomplete` is **required on every text field** using HTML tokens only (no readonly/decoy hacks):
+  - Non-credential fields: `off`
+  - Login: `username` / `current-password`
+  - Create user & source credentials: username `off`, password `new-password`
+  - Change password: current `current-password`, new/confirm `new-password`
+- Password fields always use `PasswordField` (show/hide toggle). Never a raw `type="password"` input
+- `style="max-width: 320px;"` for fixed-width inputs on pages; dialogs usually let fields fill the content width
+- Side-by-side fields: the `field-row` theme class — never `v-row`/`v-col`
 
 ## Form Layout
 
@@ -161,8 +162,8 @@ Under ingress the app is served from `/api/hassio_ingress/<token>/`, so nothing 
   <div class="mb-4">
     <v-text-field v-model="name" label="Name" variant="outlined" density="compact" hide-details="auto" autocomplete="off" />
   </div>
-  <div class="d-flex justify-end mt-4">
-    <v-btn variant="text" class="mr-2" @click="cancel">Cancel</v-btn>
+  <div class="d-flex justify-end" style="gap: 8px">
+    <v-btn variant="text" @click="cancel">Cancel</v-btn>
     <v-btn type="submit" color="primary" variant="elevated">Save</v-btn>
   </div>
 </v-form>
@@ -170,27 +171,61 @@ Under ingress the app is served from `/api/hassio_ingress/<token>/`, so nothing 
 
 ## Feedback and Confirmations
 
-Never use `alert()` or `confirm()`. Use `v-alert` for feedback and StandardDialog for confirmations.
+Never use `alert()` or `confirm()`.
 
-```vue
-<StandardDialog v-model="showDeleteDialog" title="Delete source?" max-width="400" :fullscreen="mobile" @close="sourceToDelete = null">
-  <p>Are you sure?</p>
-  <template #actions>
-    <v-spacer />
-    <v-btn variant="text" class="mr-2" @click="showDeleteDialog = false">Cancel</v-btn>
-    <v-btn color="error" variant="elevated" @click="confirmDelete">Delete</v-btn>
-  </template>
-</StandardDialog>
+Page-level alerts come from `useFeedback()`, which owns both `error` and `success`. Success is
+transient and auto-clears, and setting one clears the other — a success banner that nothing
+resets ends up sitting next to the failure that came after it.
+
+```js
+const { error, success, showError, showSuccess, clear: clearFeedback } = useFeedback()
 ```
 
-Pass `:fullscreen="mobile"` from `useDisplay()` on small screens.
+Deletes use `ConfirmDeleteDialog`; it handles the question, the error alert placement, the
+loading state, and `:fullscreen` on mobile. The default slot takes extra detail (for example
+what still references the record).
+
+```vue
+<ConfirmDeleteDialog
+  v-model="showDelete"
+  title="Delete source?"
+  :name="toDelete?.name"
+  :error="deleteError"
+  :loading="deleting"
+  @close="toDelete = null"
+  @confirm="confirmDelete"
+/>
+```
+
+Anything else that needs a modal uses StandardDialog directly, with `:fullscreen="mobile"` from
+`useDisplay()`. The primary button names the outcome: **Create** in a create dialog, **Save**
+when editing, **Delete** in a confirm.
+
+## Shared primitives
+
+| Need | Use |
+|------|-----|
+| Nothing-here placeholder | `EmptyState` |
+| Delete confirmation | `ConfirmDeleteDialog` |
+| Any other modal | `StandardDialog` |
+| Password input | `PasswordField` |
+| Page alerts | `useFeedback()` |
+| Screen / tour write body | `screenPayload`, `tourPayload` (`@/utils/payloads`) |
+| Fit modes, select items, name lookup, transition summary | `@/utils/formatters` |
+| Password policy | `@/utils/passwords` |
+| Full-bleed layout id | `FULL_BLEED_ID` (`@/utils/layouts`) |
+
+The Save-enabled check and the request body must both come from `screenPayload` /
+`tourPayload`. Computing them separately lets Save light up on one shape and send another.
 
 ## Spacing Rules
 
-- Between form fields: `mb-4`
-- Before action buttons: `mt-4`
-- Between buttons: `mr-2` on the first button
-- Between chips: `mr-2 mb-2` on each chip
-- **Never use `gap`** — use explicit margins
+- Between form fields: `mb-4` on the upper field (prefer `mb-*` over `mt-*` for section rhythm)
+- Control clusters (buttons, chips, switches): `d-flex` + `style="gap: 8px"`
+- Switch rows: class `switch-cluster` (16px), not bare `gap: 8px`
+- Side-by-side form fields: class `field-row` (16px both axes; no per-child margin)
+- Centred single-card pages: class `page-narrow` on the `v-container`
+- Inline editors: **Save** only, disabled when clean; dialogs keep Cancel + primary
+- `v-row`/`v-col` are not used anywhere; do not rely on Vuetify `ga-*`
 
 See [UI Style Guidelines](ui-style-guidelines.md) for the full visual specification.

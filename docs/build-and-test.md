@@ -1,22 +1,25 @@
 # Build and Test Guide
 
-> **Status:** Scaffolded. `scripts/build.sh` and the Makefile exist for the control-plane framework. FFmpeg and SDL3 are not required until the display/decode stages land.
+> **Status:** Control-plane build and tests run without linking FFmpeg or SDL3. Optional `ffprobe` / `yt-dlp` / `ffmpeg` on `PATH` enable probe and thumbnails. FFmpeg **link** dependencies and SDL3 are not required until the display/decode stages land.
 
 ## Prerequisites
 
 | Requirement | Notes |
 |-------------|-------|
 | **Go 1.25+** | Match CI, Docker, and goreleaser-cross |
-| **CGO enabled** | Required for both SQLite and FFmpeg bindings |
-| **FFmpeg 8.x development libraries** | `libavcodec`, `libavformat`, `libavutil`, `libavfilter`, `libswscale` |
-| **SDL3 3.4+** | Runtime shared library; must be built with KMSDRM on the Pi |
-| **pkg-config** | Used to locate the FFmpeg libraries |
+| **CGO enabled** | Required for SQLite (and later for FFmpeg bindings) |
 | **Node.js 20+ and Yarn** | Only for full builds with the embedded frontend |
-| **`yt-dlp`** | Runtime only, optional. Required for YouTube sources; discovered on `PATH` |
+| **`yt-dlp`** | Runtime only, optional. Required to resolve YouTube sources; discovered on `PATH` |
+| **`ffprobe` / `ffmpeg`** | Runtime only, optional. Probe and thumbnail extraction use subprocesses when present; missing tools return `probe.status: unavailable` rather than failing the build |
+| **FFmpeg 8.x development libraries** | **Not linked yet.** Needed when the decode stage lands (`libavcodec`, `libavformat`, `libavutil`, `libavfilter`, `libswscale`) |
+| **SDL3 3.4+** | **Not linked yet.** Runtime shared library; must be built with KMSDRM for headless Linux panel output |
+| **pkg-config** | Used later to locate the FFmpeg libraries |
+
+The current control-plane binary only needs Go (CGO for SQLite) and, for a full UI build, Node/Yarn. FFmpeg **development** libraries and SDL3 are for later display/decode stages and are **not linked** today. On a Mac used for API/UI work, optional `brew install yt-dlp ffmpeg` puts `yt-dlp`/`ffprobe`/`ffmpeg` on `PATH` for probe and thumbnails; SDL3 is unnecessary with `-display=false`.
 
 ### Installing dependencies
 
-**Debian / Ubuntu / Raspberry Pi OS:**
+**Debian / Ubuntu / Raspberry Pi OS / other Linux:**
 
 ```bash
 sudo apt install -y build-essential pkg-config libsqlite3-dev \
@@ -24,25 +27,25 @@ sudo apt install -y build-essential pkg-config libsqlite3-dev \
   libsdl3-dev libdrm-dev libgbm-dev
 ```
 
-If `libsdl3-dev` is not available for your distribution, build SDL3 from source with `-DSDL_KMSDRM=ON`. Verify libdrm and libgbm development packages are installed **before** configuring SDL, or KMSDRM will be silently omitted from the build and the Pi will show a black screen with no error.
+If `libsdl3-dev` is not available for your distribution, build SDL3 from source with `-DSDL_KMSDRM=ON` when you need headless panel output. Verify libdrm and libgbm development packages are installed **before** configuring SDL, or KMSDRM will be silently omitted from the build and a headless host will show a black screen with no error.
 
-**macOS (development only):**
+**macOS (development):**
 
 ```bash
 brew install pkg-config ffmpeg sdl3
 ```
 
-macOS has no KMSDRM; the display engine opens a normal window. This is the expected development setup for layout and transition work.
+macOS has no KMSDRM; the display engine opens a normal window. This is the expected development setup for layout and transition work. Control-plane-only work needs neither SDL3 nor FFmpeg development libraries — use `-display=false`.
 
-### Raspberry Pi display configuration
+### Headless Linux display configuration (Raspberry Pi example)
 
-Add to `/boot/firmware/config.txt`:
+On Raspberry Pi OS, add to `/boot/firmware/config.txt`:
 
 ```
 dtoverlay=vc4-kms-v3d
 ```
 
-Append `,cma-512` for 4K output. Add the service user to the `video` and `render` groups so it can open `/dev/dri/*`. Nothing else may hold DRM master — no desktop session, no other DRM client.
+Append `,cma-512` for 4K output. Add the service user to the `video` and `render` groups so it can open `/dev/dri/*`. Nothing else may hold DRM master — no desktop session, no other DRM client. Other SBCs have equivalent DRM enablement steps; document them as they are validated.
 
 ## Building
 
@@ -84,9 +87,9 @@ cp -r frontend/dist cmd/livestream-viewer/frontend-dist
 CGO_ENABLED=1 go build -tags embed_frontend -o build/livestream-viewer ./cmd/livestream-viewer
 ```
 
-### Cross-compiling for the Raspberry Pi
+### Cross-compiling for Linux targets (amd64 / arm64)
 
-Because the binary links FFmpeg and needs the target's SDL3, cross-compilation requires a matching sysroot. The supported path is building inside a `linux/arm64` container, the same as the release pipeline:
+Because the binary will link FFmpeg and needs the target's SDL3 once the display stage lands, cross-compilation requires a matching sysroot. The supported path is building inside containers, the same as the release pipeline:
 
 ```bash
 make build-deb
@@ -101,7 +104,7 @@ This builds the frontend, then runs GoReleaser in snapshot mode inside Docker fo
 
 Use `SKIP_FRONTEND=1 ./scripts/build-deb.sh` if the frontend is already built. `make frontend` builds only the frontend.
 
-Plain `GOARCH=arm64 go build` will not work — CGO needs a cross toolchain and the target's FFmpeg and SDL3 headers.
+Plain `GOARCH=arm64 go build` will not work for CGO-linked stages — CGO needs a cross toolchain and the target's FFmpeg and SDL3 headers. The current control-plane binary (SQLite only) can be built natively on any Go host.
 
 ## Testing
 
@@ -117,10 +120,10 @@ With the race detector (use a longer timeout):
 CGO_ENABLED=1 go test -race -timeout=60s ./...
 ```
 
-Race detection is **mandatory** for the frame handoff and display packages, because their correctness rests on lock-free atomics:
+Race detection is **mandatory** for the scheduler and (later) frame-handoff packages, because their correctness rests on concurrent command handling and atomics:
 
 ```bash
-CGO_ENABLED=1 go test -race -timeout=60s ./internal/frame/... ./internal/display/...
+CGO_ENABLED=1 go test -race -timeout=60s ./internal/schedule/...
 ```
 
 ### Test a single package
@@ -137,11 +140,11 @@ Tests requiring a real SDL context are behind the `sdl` build tag and excluded f
 CGO_ENABLED=1 go test -tags sdl -timeout=60s ./internal/display/...
 ```
 
-Do not add SDL-dependent tests to the default set. CI has no display, and on a Pi such a test would take DRM master away from a running instance.
+Do not add SDL-dependent tests to the default set. CI has no display, and on a headless Linux host such a test would take DRM master away from a running instance.
 
 ### What not to do
 
-- **Do not run the application to validate a change.** It takes the main thread and, on a Pi, DRM master. Use `go build` and `go test`.
+- **Do not run the application to validate a change.** It takes the main thread and, when display is enabled on Linux, DRM master. Use `go build` and `go test`.
 - **Do not start the display engine in a unit test.** The layout solver, transitions, scheduler, and compositor are all deliberately testable without one.
 - **Do not add tests that open network streams.** Use recorded fixtures or a synthetic source.
 
@@ -194,11 +197,13 @@ SDL opens a normal window. Layouts, transitions, and the scheduler all behave id
 
 `.github/workflows/ci.yml` runs:
 
-1. Install FFmpeg and SDL3 development packages
-2. `go mod download`
-3. `go vet ./...`
-4. `CGO_ENABLED=1 go test -race -timeout=60s ./...`
-5. Frontend build, then `go build -tags embed_frontend`
+1. `gofmt` check
+2. `go vet ./cmd/... ./internal/... ./api/...`
+3. `CGO_ENABLED=1 go test -race -timeout=60s ./cmd/... ./internal/... ./api/...`
+4. Frontend `yarn lint` and `yarn build`
+5. `./scripts/build.sh` (embedded frontend)
+
+FFmpeg and SDL3 packages are **not** installed in CI until those libraries are linked.
 
 Run the same commands locally to catch CI failures early.
 

@@ -32,12 +32,18 @@ const (
 	FamilyHotspot   = "hotspot"
 	FamilyVertical  = "vertical"
 	FamilyPanoramic = "panoramic"
+	FamilyFullBleed = "full_bleed"
+
+	// FullBleedID is the single-cell full-frame layout. It is the only
+	// one-cell option in the catalogue: transition screens and Preview use it
+	// when there is no grid geometry, and grid screens default to it.
+	FullBleedID = "full"
 )
 
 // All returns the layout catalogue. Cell index 0 is the hotspot where one exists.
 func All() []Layout {
 	return []Layout{
-		grid("1x1", "1×1", FamilyEqual, 1, 1),
+		fullBleed(),
 		grid("2x1", "2×1", FamilyEqual, 2, 1),
 		grid("1x2", "1×2", FamilyEqual, 1, 2),
 		grid("2x2", "2×2", FamilyEqual, 2, 2),
@@ -51,6 +57,13 @@ func All() []Layout {
 		vertical1Plus6(),
 		panoramic2(),
 		panoramic1Plus6(),
+	}
+}
+
+func fullBleed() Layout {
+	return Layout{
+		ID: FullBleedID, Name: "Full bleed", Family: FamilyFullBleed, Cells: 1,
+		Rects: []Rect{{X: 0, Y: 0, W: 1, H: 1}},
 	}
 }
 

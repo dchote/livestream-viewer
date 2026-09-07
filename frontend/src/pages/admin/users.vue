@@ -16,6 +16,7 @@
       </template>
 
       <v-alert v-if="error" type="error" density="compact" class="mb-4">{{ error }}</v-alert>
+      <v-alert v-if="success" type="success" density="compact" class="mb-4">{{ success }}</v-alert>
 
       <v-data-table
         v-if="users.length > 0"
@@ -84,11 +85,12 @@
         </template>
         <template #bottom />
       </v-data-table>
-      <div v-else class="empty-state">
-        <v-icon class="empty-state__icon">mdi-account-multiple</v-icon>
-        <div class="text-h6 empty-state__title">No users yet</div>
-        <p class="empty-state__copy">Add a management user to share access to this appliance.</p>
-      </div>
+      <EmptyState
+        v-else
+        icon="mdi-account-multiple"
+        title="No users yet"
+        copy="Add a management user to share access to this appliance."
+      />
     </StandardCard>
 
     <CreateUserDialog
@@ -107,43 +109,33 @@
       @close="editingUser = null"
     />
 
-    <StandardDialog
+    <ConfirmDeleteDialog
       v-model="showDeleteDialog"
       title="Delete user?"
-      max-width="400"
-      :fullscreen="mobile"
+      :name="userToDelete?.username"
+      :error="deleteError"
+      :loading="deleting"
       @close="userToDelete = null"
-    >
-      <v-alert v-if="deleteError" type="error" density="compact" class="mb-4">
-        {{ deleteError }}
-      </v-alert>
-      <p>Are you sure you want to delete {{ userToDelete?.username }}?</p>
-      <template #actions>
-        <v-spacer />
-        <v-btn variant="text" class="mr-2" @click="showDeleteDialog = false">Cancel</v-btn>
-        <v-btn color="error" variant="elevated" :loading="deleting" @click="confirmDelete">
-          Delete
-        </v-btn>
-      </template>
-    </StandardDialog>
+      @confirm="confirmDelete"
+    />
   </v-container>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useDisplay } from 'vuetify'
+import ConfirmDeleteDialog from '@/components/common/ConfirmDeleteDialog.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import StandardCard from '@/components/common/StandardCard.vue'
-import StandardDialog from '@/components/common/StandardDialog.vue'
 import EditUserRoleDialog from '@/components/admin/EditUserRoleDialog.vue'
 import CreateUserDialog from '@/components/admin/CreateUserDialog.vue'
 import { api } from '@/utils/api'
 import { roleLabel } from '@/utils/roles'
+import { useFeedback } from '@/composables/useFeedback'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
-const { mobile } = useDisplay()
+const { error, success, showError, showSuccess } = useFeedback()
 const users = ref([])
-const error = ref('')
 const createDialog = ref(null)
 const editDialog = ref(null)
 const showEditRoleDialog = ref(false)
@@ -164,22 +156,25 @@ const headers = [
   { title: '', key: 'actions', sortable: false, align: 'end', width: 56 },
 ]
 
-onMounted(async () => {
+async function load() {
   try {
     const data = await api.get('api/v1/users')
     users.value = data.users || []
   } catch (e) {
     console.log('[Users] API error:', e)
-    error.value = e.message || 'Failed to load users'
+    showError(e.message || 'Failed to load users')
   }
-})
+}
+
+onMounted(load)
 
 async function confirmCreate(payload) {
   creating.value = true
   try {
-    const created = await api.post('api/v1/users', payload)
-    users.value = [...users.value, created]
+    await api.post('api/v1/users', payload)
     showCreateDialog.value = false
+    await load()
+    showSuccess('User created')
   } catch (e) {
     console.log('[Users] create error:', e)
     createDialog.value?.setError(e.message || 'Failed to create user')
@@ -198,10 +193,10 @@ async function confirmEditRole(payload) {
   updatingRole.value = true
   try {
     await api.patch(`api/v1/users/${payload.id}`, { role: payload.role })
-    const u = users.value.find((x) => x.id === payload.id)
-    if (u) u.role = payload.role
     showEditRoleDialog.value = false
     editingUser.value = null
+    await load()
+    showSuccess('Role updated')
   } catch (e) {
     console.log('[Users] update role error:', e)
     editDialog.value?.setError(e.message || 'Failed to update role')
@@ -222,9 +217,10 @@ async function confirmDelete() {
   deleting.value = true
   try {
     await api.delete(`api/v1/users/${userToDelete.value.id}`)
-    users.value = users.value.filter((x) => x.id !== userToDelete.value.id)
     showDeleteDialog.value = false
     userToDelete.value = null
+    await load()
+    showSuccess('User deleted')
   } catch (e) {
     console.log('[Users] delete error:', e)
     deleteError.value = e.message || 'Failed to delete user'

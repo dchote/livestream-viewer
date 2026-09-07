@@ -2,8 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"runtime"
+
+	"github.com/dchote/livestream-viewer/internal/model"
 )
 
 // Version is set from main via SetVersion.
@@ -35,6 +38,17 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+var shortPasswordMessage = fmt.Sprintf("password must be at least %d characters", model.MinPasswordLength)
+
+// emptyIfNil normalises a nil slice so collection responses always encode as
+// `[]` rather than `null`, which clients would have to special-case.
+func emptyIfNil[T any](items []T) []T {
+	if items == nil {
+		return []T{}
+	}
+	return items
 }
 
 func runtimePlatform() string {

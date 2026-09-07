@@ -15,27 +15,58 @@ All Vuetify input components must use **compact density** and **hide-details="au
 | `density` | `"compact"` |
 | `hide-details` | `"auto"` |
 | `variant` | `"outlined"` |
-| `autocomplete` | `"off"` on every non-auth text field |
+| `autocomplete` | Always set — see table below |
 
-## Exceptions
+## Autocomplete (HTML tokens only)
 
-- Login/register may use `density="comfortable"` for accessibility
-- Auth forms use `autocomplete="username"`, `"current-password"`, or `"new-password"`
+Use the standard `autocomplete` attribute on `v-text-field` / `PasswordField`. **Do not** use readonly-until-focus, hidden decoy inputs, or other autofill hacks.
+
+| Context | Username / text | Password |
+|---------|-----------------|----------|
+| Login | `username` | `current-password` |
+| Create user, source credentials, other non-session secrets | `off` | `new-password` |
+| Change password (current) | — | `current-password` |
+| Change password (new / confirm) | — | `new-password` |
+| All other fields | `off` | — |
+
+Browsers ignore `autocomplete="off"` on password fields; `new-password` is the correct token so login credentials are not filled into admin/create forms.
+
+Login may use `density="comfortable"` for accessibility.
+
+## Password Fields
+
+Never use a raw `type="password"` field. Every password input uses `frontend/src/components/common/PasswordField.vue`:
+
+- Hidden by default, with an `append-inner` eye toggle (`mdi-eye` / `mdi-eye-off`)
+- Accessible `aria-label`: `Show password` / `Hide password`
+- Pass through `label`, `autocomplete`, `density`, `variant`
 
 ## Duration Fields
 
 Durations are stored in milliseconds. Always label the unit explicitly — `Dwell time (seconds)`, not `Dwell time`.
 
+## Layout
+
+- Do **not** use `v-row`/`v-col`, anywhere. Column gutters fight `mb-4`.
+- Side-by-side fields: the `field-row` theme class. Children split the width; cap a narrow
+  one with `style="max-width: …px"`; give a trailing icon cluster `field-row__actions`.
+  Never add `mb-4 mb-sm-0` to a child — the class gaps both axes already.
+- Button / chip clusters: `d-flex align-center flex-wrap` + `style="gap: 8px"`.
+- Switch clusters: `d-flex align-center flex-wrap switch-cluster` (theme: 16px gap + non-shrinking switches).
+
+## Switches
+
+Boolean settings use **`v-switch` with `inset`**:
+
 ```vue
-<!-- ✅ GOOD -->
-<v-text-field
-  variant="outlined"
+<v-switch
+  v-model="enabled"
+  label="Enabled"
+  color="primary"
+  inset
   density="compact"
   hide-details="auto"
-  autocomplete="off"
 />
-
-<!-- ❌ BAD -->
-<v-text-field density="comfortable" ... />
-<v-text-field />  <!-- missing hide-details -->
 ```
+
+Do not use `v-checkbox` for on/off settings rows.

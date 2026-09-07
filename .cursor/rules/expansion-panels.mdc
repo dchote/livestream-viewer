@@ -1,0 +1,35 @@
+---
+description: Expansion panels must be flat; body top padding comes from theme
+globs: frontend/src/**/*.{vue,scss}
+alwaysApply: false
+---
+
+# Expansion panels
+
+**Never use elevated expansion panels.** Nested in StandardCard they look wrong against the flat card chrome.
+
+```vue
+<v-expansion-panels
+  v-model="opened"
+  multiple
+  flat
+  variant="accordion"
+>
+```
+
+## Required
+
+- `flat` — always
+- Prefer `variant="accordion"` for flush stacked rows
+- `multiple` when more than one panel may be open; start collapsed (`v-model` `[]`); do not set `mandatory`
+- After **creating** a list item (new screen, new tour entry), expand that panel, scroll it into view, and apply the theme class `panel-flash` briefly — do not leave the user hunting for what they just added
+
+## Body padding and wash
+
+Theme (`.v-expansion-panel-text__wrapper`) sets **16px** top (Vuetify default is only 8px). With `.v-field` inside, top is **20px** for outlined label clearance. `.v-expansion-panel-text` uses a subtle `on-surface` tint (≈1.5–2.5% opacity) as an inset wash — do not invent per-panel background colors.
+
+## Do not
+
+- Omit `flat` (default elevation/shadow)
+- Stack elevated panels as a substitute for StandardCard
+- Patch panel top spacing only in one component while leaving others tight

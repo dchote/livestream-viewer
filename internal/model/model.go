@@ -1,14 +1,64 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/dchote/livestream-viewer/internal/display/transition"
+)
 
 const (
 	RoleAdmin = "admin"
 	RoleUser  = "user"
+
+	KindYouTube = "youtube"
+	KindRTSP    = "rtsp"
+	KindHLS     = "hls"
+	KindDASH    = "dash"
+	KindHTTP    = "http"
+	KindSRT     = "srt"
+	KindRTMP    = "rtmp"
+	KindFile    = "file"
+
+	FitContain = "contain"
+	FitCover   = "cover"
+	FitFill    = "fill"
+
+	ScreenKindGrid       = "grid"
+	ScreenKindTransition = "transition"
+
+	MinDwellMS = 1000
+
+	// MinPasswordLength is mirrored by frontend/src/utils/passwords.js.
+	MinPasswordLength = 8
+
+	ProbeOK          = "ok"
+	ProbeUnavailable = "unavailable"
+	ProbeError       = "error"
 )
 
 func ValidRole(role string) bool {
 	return role == RoleAdmin || role == RoleUser
+}
+
+func ValidKind(kind string) bool {
+	switch kind {
+	case KindYouTube, KindRTSP, KindHLS, KindDASH, KindHTTP, KindSRT, KindRTMP, KindFile:
+		return true
+	}
+	return false
+}
+
+func ValidFit(fit string) bool {
+	switch fit {
+	case FitContain, FitCover, FitFill:
+		return true
+	}
+	return false
+}
+
+func ValidScreenKind(kind string) bool {
+	return kind == ScreenKindGrid || kind == ScreenKindTransition
 }
 
 // User is a management UI account.
@@ -26,53 +76,81 @@ func (User) TableName() string { return "users" }
 
 // RuntimeConfig is the single-row database-backed configuration.
 type RuntimeConfig struct {
-	ID                    uint   `json:"id" gorm:"primaryKey"`
-	OutputWidth           int    `json:"output_width"`
-	OutputHeight          int    `json:"output_height"`
-	OutputRotation        int    `json:"output_rotation"`
-	DefaultDwellMS        int    `json:"default_dwell_ms"`
-	DefaultTransitionJSON string `json:"default_transition" gorm:"type:text"`
-	AllowSoftwareFallback bool   `json:"allow_software_fallback"`
-	MaxHWDecoders         int    `json:"max_hw_decoders"`
-	ReconnectBackoffMS    int    `json:"reconnect_backoff_ms"`
-	OfflineGraceMS        int    `json:"offline_grace_ms"`
-	PreviewFPS            int    `json:"preview_fps"`
-	PreviewWidth          int    `json:"preview_width"`
-	PlaceholderColor      string `json:"placeholder_color" gorm:"size:32"`
-	GutterPx              int    `json:"gutter_px"`
+	ID                    uint            `json:"id" gorm:"primaryKey"`
+	OutputWidth           int             `json:"output_width"`
+	OutputHeight          int             `json:"output_height"`
+	OutputRotation        int             `json:"output_rotation"`
+	DefaultDwellMS        int             `json:"default_dwell_ms"`
+	DefaultTransition     transition.Spec `json:"default_transition" gorm:"serializer:json"`
+	AllowSoftwareFallback bool            `json:"allow_software_fallback"`
+	MaxHWDecoders         int             `json:"max_hw_decoders"`
+	ReconnectBackoffMS    int             `json:"reconnect_backoff_ms"`
+	OfflineGraceMS        int             `json:"offline_grace_ms"`
+	PreviewFPS            int             `json:"preview_fps"`
+	PreviewWidth          int             `json:"preview_width"`
+	PlaceholderColor      string          `json:"placeholder_color" gorm:"size:32"`
+	GutterPx              int             `json:"gutter_px"`
 }
 
 func (RuntimeConfig) TableName() string { return "config" }
 
+// SourceOptions is kind-specific configuration stored as JSON.
+type SourceOptions struct {
+	Transport string `json:"transport,omitempty"`
+	Loop      *bool  `json:"loop,omitempty"`
+	UploadID  *uint  `json:"upload_id,omitempty"`
+}
+
+// ProbeResult is the cached outcome of probing a source.
+type ProbeResult struct {
+	Status   string    `json:"status,omitempty"`
+	Message  string    `json:"message,omitempty"`
+	Codec    string    `json:"codec,omitempty"`
+	Width    int       `json:"width,omitempty"`
+	Height   int       `json:"height,omitempty"`
+	FPS      float64   `json:"fps,omitempty"`
+	HWDecode *bool     `json:"hw_decode"`
+	ProbedAt time.Time `json:"probed_at,omitempty"`
+}
+
 // Source is a producer of video frames.
 type Source struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"size:255;not null"`
-	Kind        string    `json:"kind" gorm:"size:32;not null"`
-	URL         string    `json:"url" gorm:"type:text"`
-	Username    string    `json:"username,omitempty" gorm:"size:255"`
-	Password    string    `json:"-" gorm:"size:255"`
-	OptionsJSON string    `json:"options,omitempty" gorm:"type:text"`
-	Enabled     bool      `json:"enabled" gorm:"default:true"`
-	ProbeJSON   string    `json:"probe,omitempty" gorm:"type:text"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        uint          `json:"id" gorm:"primaryKey"`
+	Name      string        `json:"name" gorm:"size:255;not null"`
+	Kind      string        `json:"kind" gorm:"size:32;not null"`
+	URL       string        `json:"url" gorm:"type:text"`
+	Username  string        `json:"username,omitempty" gorm:"size:255"`
+	Password  string        `json:"-" gorm:"size:255"`
+	Options   SourceOptions `json:"options" gorm:"serializer:json"`
+	Enabled   bool          `json:"enabled" gorm:"default:true"`
+	Probe     ProbeResult   `json:"probe" gorm:"serializer:json"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 func (Source) TableName() string { return "sources" }
 
+// MarshalJSON adds has_password without exposing the secret.
+func (s Source) MarshalJSON() ([]byte, error) {
+	type Alias Source
+	return json.Marshal(struct {
+		Alias
+		HasPassword bool `json:"has_password"`
+	}{Alias: Alias(s), HasPassword: s.Password != ""})
+}
+
 // Screen is one complete composition of the output.
 type Screen struct {
-	ID             uint         `json:"id" gorm:"primaryKey"`
-	Name           string       `json:"name" gorm:"size:255;not null"`
-	Kind           string       `json:"kind" gorm:"size:32;not null"`
-	Layout         string       `json:"layout,omitempty" gorm:"size:32"`
-	Loop           bool         `json:"loop"`
-	TransitionJSON string       `json:"transition,omitempty" gorm:"type:text"`
-	Tiles          []ScreenTile `json:"tiles,omitempty" gorm:"foreignKey:ScreenID"`
-	Items          []ScreenItem `json:"items,omitempty" gorm:"foreignKey:ScreenID"`
-	CreatedAt      time.Time    `json:"created_at"`
-	UpdatedAt      time.Time    `json:"updated_at"`
+	ID         uint            `json:"id" gorm:"primaryKey"`
+	Name       string          `json:"name" gorm:"size:255;not null"`
+	Kind       string          `json:"kind" gorm:"size:32;not null"`
+	Layout     string          `json:"layout,omitempty" gorm:"size:32"`
+	Loop       bool            `json:"loop"`
+	Transition transition.Spec `json:"transition,omitempty" gorm:"serializer:json"`
+	Tiles      []ScreenTile    `json:"tiles,omitempty" gorm:"foreignKey:ScreenID"`
+	Items      []ScreenItem    `json:"items,omitempty" gorm:"foreignKey:ScreenID"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
 func (Screen) TableName() string { return "screens" }
@@ -124,12 +202,12 @@ func (Tour) TableName() string { return "tours" }
 
 // TourEntry is an ordered screen in the tour.
 type TourEntry struct {
-	ID             uint   `json:"id" gorm:"primaryKey"`
-	TourID         uint   `json:"tour_id" gorm:"index;not null"`
-	Position       int    `json:"position" gorm:"not null"`
-	ScreenID       uint   `json:"screen_id" gorm:"not null"`
-	DwellMS        int    `json:"dwell_ms" gorm:"not null"`
-	TransitionJSON string `json:"transition,omitempty" gorm:"type:text"`
+	ID         uint            `json:"id" gorm:"primaryKey"`
+	TourID     uint            `json:"tour_id" gorm:"index;not null"`
+	Position   int             `json:"position" gorm:"not null"`
+	ScreenID   uint            `json:"screen_id" gorm:"not null"`
+	DwellMS    int             `json:"dwell_ms" gorm:"not null"`
+	Transition transition.Spec `json:"transition" gorm:"serializer:json"`
 }
 
 func (TourEntry) TableName() string { return "tour_entries" }
@@ -145,3 +223,15 @@ type Upload struct {
 }
 
 func (Upload) TableName() string { return "uploads" }
+
+// ScreenRef is a compact reference used in 409 conflict details.
+type ScreenRef struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+}
+
+// SourceRef is a compact reference used in 409 conflict details.
+type SourceRef struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+}

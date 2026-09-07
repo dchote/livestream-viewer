@@ -243,6 +243,12 @@ func (c *Config) EnsureDirs() error {
 	if err := os.MkdirAll(c.DataDir, 0o755); err != nil {
 		return fmt.Errorf("data dir: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Join(c.DataDir, "uploads"), 0o755); err != nil {
+		return fmt.Errorf("uploads dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(c.DataDir, "thumbnails"), 0o755); err != nil {
+		return fmt.Errorf("thumbnails dir: %w", err)
+	}
 	if dir := filepath.Dir(c.DatabasePath); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("database dir: %w", err)

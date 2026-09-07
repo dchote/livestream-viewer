@@ -4,7 +4,7 @@
 
 ## Summary
 
-Carve a runnable **control-plane + management UI shell** out of the [0001 roadmap](0001-project-scaffold.md) so the project builds and runs on macOS today. The Go server serves the embedded SPA and Swagger; the frontend ships the dark Vuetify theme, nav, and page layouts from the UI guidelines. Display engine, FFmpeg ingest, and hardware decode stay out of scope (covered by 0001 Stages 1–4).
+Carve a runnable **control-plane + management UI shell** out of the [0001 roadmap](0001-project-scaffold.md) so the project builds and runs on a developer workstation today (including macOS with `-display=false`). The Go server serves the embedded SPA and Swagger; the frontend ships the dark Vuetify theme, nav, and page layouts from the UI guidelines. Display engine, FFmpeg ingest, and hardware decode stay out of scope (covered by 0001 Stages 1–4).
 
 **Done when:** on this Mac, `./scripts/build.sh` produces a binary; `./build/livestream-viewer -display=false` serves `/`, `/docs`, and `/health`; Vite `yarn dev` proxies to the API; add-on files exist and `docker build` for the add-on image succeeds for the control-plane binary.
 

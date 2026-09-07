@@ -1,19 +1,31 @@
 ---
-description: NEVER place adjacent buttons without margin; always use mr-2 on first button
+description: Adjacent buttons and control clusters must have spacing (gap 8px or mr-2)
 globs: frontend/src/**/*.vue
 alwaysApply: false
 ---
 
-# Button Spacing (MANDATORY)
+# Button and control spacing
 
-**Every pair of adjacent buttons MUST have spacing.** Add `class="mr-2"` to the first/left button.
+**Never place adjacent buttons or switches with no spacing.**
+
+## Preferred: control cluster gap
 
 ```vue
-<!-- ✅ GOOD -->
-<v-btn class="mr-2">Cancel</v-btn>
-<v-btn color="primary">Save</v-btn>
-
-<!-- ❌ BAD -->
-<v-btn>Cancel</v-btn>
-<v-btn>Save</v-btn>
+<div class="d-flex align-center flex-wrap" style="gap: 8px">
+  <v-btn variant="text">Cancel</v-btn>
+  <v-btn color="primary" variant="elevated">Save</v-btn>
+</div>
 ```
+
+## Also OK: margin on the first of a fixed pair
+
+```vue
+<v-btn variant="text" class="mr-2" @click="cancel">Cancel</v-btn>
+<v-btn color="primary" variant="elevated" @click="save">Save</v-btn>
+```
+
+Use `gap: 8px` for buttons, chips, and wrap toolbars. Do not use Vuetify `ga-*` utilities.
+
+**Switch rows are different**: they use the `switch-cluster` theme class (16px), because an
+inset switch's hit area already extends past its track and 8px reads as touching. See
+`margins-and-spacing.mdc`.

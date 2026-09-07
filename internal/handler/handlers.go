@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,17 +13,24 @@ import (
 
 	"github.com/dchote/livestream-viewer/internal/config"
 	"github.com/dchote/livestream-viewer/internal/display/layout"
+	"github.com/dchote/livestream-viewer/internal/display/strategy"
 	"github.com/dchote/livestream-viewer/internal/display/transition"
+	"github.com/dchote/livestream-viewer/internal/events"
 	"github.com/dchote/livestream-viewer/internal/model"
+	"github.com/dchote/livestream-viewer/internal/schedule"
+	"github.com/dchote/livestream-viewer/internal/source/resolver"
 )
 
 type Handlers struct {
-	DB  *gorm.DB
-	Cfg *config.Config
+	DB      *gorm.DB
+	Cfg     *config.Config
+	Runtime *schedule.Runtime
+	Hub     *events.Hub
+	Tools   resolver.Tools
 }
 
-func New(db *gorm.DB, cfg *config.Config) *Handlers {
-	return &Handlers{DB: db, Cfg: cfg}
+func New(db *gorm.DB, cfg *config.Config, rt *schedule.Runtime, hub *events.Hub) *Handlers {
+	return &Handlers{DB: db, Cfg: cfg, Runtime: rt, Hub: hub}
 }
 
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +42,7 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) SystemInfo(w http.ResponseWriter, r *http.Request) {
+	yt, ffprobe, _ := h.Tools.Available()
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"version":         appVersion,
 		"commit":          appCommit,
@@ -41,7 +50,8 @@ func (h *Handlers) SystemInfo(w http.ResponseWriter, r *http.Request) {
 		"platform":        runtimePlatform(),
 		"display_running": false,
 		"display_enabled": h.Cfg.DisplayEnabled,
-		"yt_dlp":          false,
+		"yt_dlp":          yt,
+		"ffprobe":         ffprobe,
 		"capabilities": map[string]any{
 			"h264_hw": false,
 			"hevc_hw": false,
@@ -119,11 +129,46 @@ func (h *Handlers) PatchConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["gutter_px"].(float64); ok {
 		rc.GutterPx = int(v)
 	}
+	if v, ok := patch["default_transition"]; ok && v != nil {
+		b, err := json.Marshal(v)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid default_transition", nil)
+			return
+		}
+		var spec transition.Spec
+		if err := json.Unmarshal(b, &spec); err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid default_transition", nil)
+			return
+		}
+		if err := transition.Validate(spec); err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
+			return
+		}
+		rc.DefaultTransition = spec
+	}
 	if err := h.DB.Save(&rc).Error; err != nil {
 		WriteError(w, http.StatusInternalServerError, "config_error", "failed to save config", nil)
 		return
 	}
+	h.reloadStrategy()
 	WriteJSON(w, http.StatusOK, rc)
+}
+
+// reloadStrategy rebuilds the immutable snapshot and hands it to the scheduler.
+// The database write that triggered it has already committed, so a build
+// failure is not reported to the client — retrying would duplicate the write.
+// It is logged at error level instead: the scheduler is now serving a stale
+// snapshot and that needs operator attention.
+func (h *Handlers) reloadStrategy() {
+	if h.Runtime == nil {
+		return
+	}
+	snap, err := strategy.Build(h.DB)
+	if err != nil {
+		slog.Error("strategy reload failed; scheduler is serving a stale snapshot", "error", err)
+		return
+	}
+	h.Runtime.ApplyStrategy(snap)
 }
 
 type loginRequest struct {
@@ -199,8 +244,8 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, "invalid_credentials", "current password is incorrect", nil)
 		return
 	}
-	if len(req.NewPassword) < 8 {
-		WriteError(w, http.StatusBadRequest, "bad_request", "password must be at least 8 characters", nil)
+	if len(req.NewPassword) < model.MinPasswordLength {
+		WriteError(w, http.StatusBadRequest, "bad_request", shortPasswordMessage, nil)
 		return
 	}
 	if req.NewPassword == req.CurrentPassword {

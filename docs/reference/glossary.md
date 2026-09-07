@@ -25,7 +25,8 @@ The grouping used by the layout picker, following [Vivotek VAST](https://www.viv
 
 | Family | Examples | Notes |
 |--------|----------|-------|
-| **Equal** | `1x1`, `2x2`, `3x3`, `4x4` | Uniform grid. `2x2` is often called a *quad*. |
+| **Full bleed** | `full` | One source filling the output. The only single-cell layout. |
+| **Equal** | `2x2`, `3x3`, `4x4`, `2x1`, `1x2` | Uniform grid. `2x2` is often called a *quad*. |
 | **Focus** / **Hotspot** / **1+N** | `1+3`, `1+5`, `1+7`, `1+12` | One large tile plus smaller ones. |
 | **Vertical** | `3v`, `1v+6` | For portrait displays or portrait sources. |
 | **Panoramic** | `2p`, `1p+6` | For wide or stitched sources. |

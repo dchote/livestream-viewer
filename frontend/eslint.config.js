@@ -26,6 +26,7 @@ export default [
         URLSearchParams: 'readonly',
         FormData: 'readonly',
         EventSource: 'readonly',
+        XMLHttpRequest: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setInterval: 'readonly',

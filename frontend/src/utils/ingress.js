@@ -11,9 +11,3 @@ export function getIngressBase() {
   }
   return '/'
 }
-
-export function apiUrl(path) {
-  const base = getIngressBase()
-  const p = path.startsWith('/') ? path.slice(1) : path
-  return `${base}${p}`
-}

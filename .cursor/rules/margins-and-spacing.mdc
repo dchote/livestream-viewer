@@ -1,32 +1,84 @@
 ---
-description: ALWAYS use appropriate margins when creating components or doing form layouts
-globs: frontend/src/**/*.vue
+description: Spacing — 4px grid, mb-* rhythm, inline gap for control clusters
+globs: frontend/src/**/*.{vue,scss,css}
 alwaysApply: false
 ---
 
-# Margins and Spacing
+# Spacing
 
-**Always use appropriate margins** for consistent spacing. Do NOT use `gap`.
+**Reference**: `docs/patterns/ui-style-guidelines.md` (Spacing and Layout). Aligned with the 8wi design guide.
 
-## Quick Reference
+## Prefer Vuetify utilities
 
-| Context | Class |
-|---------|-------|
-| Between form fields | `mb-4` |
-| Before action buttons | `mt-4` |
-| **Between grouped buttons** | **`mr-2`** on first button |
-| **Between chips** | **`mr-2 mb-2`** on each chip |
+Use `pa-*`, `ma-*`, `mb-*`, etc. Do **not** add `theme.scss` rules that only restate Vuetify spacing.
 
-## Button Rule (MANDATORY)
+## Vertical rhythm: `mb-*`, not `mt-*`
 
-Add `class="mr-2"` to the first/left button in any button group.
+Put the gap on the **upper** element (`mb-4` between stacked fields/sections). Avoid `mt-*` for section rhythm (double-spacing bugs).
+
+| Context | Spacing |
+|---------|---------|
+| Stacked form fields | `mb-4` (16px) |
+| Section label → content | `mb-2` / `mb-3` on the label |
+| Cards on a page | `mb-4` on each card |
+| Alerts above content | `mb-4` |
+
+## Control clusters: inline `gap`
+
+Buttons, chips, and wrap toolbars:
 
 ```vue
-<!-- ✅ GOOD -->
-<v-btn class="mr-2">Cancel</v-btn>
-<v-btn color="primary">Save</v-btn>
-
-<!-- ❌ BAD -->
-<v-btn>Cancel</v-btn>
-<v-btn>Save</v-btn>
+<div class="d-flex align-center flex-wrap" style="gap: 8px">
 ```
+
+**Switch rows** use the theme class (16px gap; pins switch width so spacing shows):
+
+```vue
+<div class="d-flex align-center flex-wrap switch-cluster">
+  <v-switch inset color="primary" density="compact" hide-details="auto" … />
+  <v-switch inset color="primary" density="compact" hide-details="auto" … />
+</div>
+```
+
+| Cluster | Gap |
+|---------|-----|
+| Buttons / chips in a row | `style="gap: 8px"` |
+| Switches in a row | class `switch-cluster` (16px) |
+| Side-by-side form fields | class `field-row` (16px both axes) |
+
+## Side-by-side fields: `field-row`
+
+```vue
+<div class="field-row mb-4">
+  <v-select label="Screen" … />
+  <v-text-field label="Dwell time (seconds)" style="max-width: 200px;" … />
+  <div class="field-row__actions d-flex align-center" style="gap: 4px">
+    <v-btn icon variant="text" size="small" …><v-icon size="small">mdi-close</v-icon></v-btn>
+  </div>
+</div>
+```
+
+- Children split the width evenly; cap one with `style="max-width: …px"` when it should stay narrow.
+- Row-action clusters get `field-row__actions` so they sit at natural width.
+- Stacks below `sm` **with no per-child margin** — the gap applies on both axes. Never add
+  `mb-4 mb-sm-0` to a child; that is the double-spacing bug this class exists to prevent.
+
+## Never use `v-row` / `v-col`
+
+There is no remaining use in this codebase. Column gutters fight `mb-4` and leave zero
+horizontal gap between auto-width controls.
+
+| Instead of | Use |
+|------------|-----|
+| `v-row` + `v-col` for a field pair | class `field-row` |
+| `v-row justify="center"` + `v-col` to centre a card | class `page-narrow` on the `v-container` |
+
+## Simple two-button pairs
+
+Cancel + Save may use `class="mr-2"` on the first button **or** a parent `style="gap: 8px"`. Prefer the same pattern as the surrounding cluster.
+
+## Do not
+
+- Rely on `ga-*` / `gap-*` utility classes for critical layout
+- Put adjacent interactive controls with no spacing
+- Invent custom margin aliases in `theme.scss`

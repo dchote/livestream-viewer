@@ -2,7 +2,7 @@
 
 > **Status:** Design. Not yet implemented.
 
-This document covers everything from a decoded frame to a lit pixel: SDL3 initialisation, the KMSDRM path on the Raspberry Pi, texture management, compositing, transitions, and presentation.
+This document covers everything from a decoded frame to a lit pixel: SDL3 initialisation, the Linux KMS/DRM path for headless panels, windowed output on desktop hosts, texture management, compositing, transitions, and presentation. Raspberry Pi and other embedded boards are called out where their DRM or Mesa behaviour differs from a generic Linux workstation.
 
 ## SDL3 Binding Choice
 
@@ -18,7 +18,7 @@ This document covers everything from a decoded frame to a lit pixel: SDL3 initia
 Two caveats to design around:
 
 1. **Purego means no compile-time symbol checking.** A missing or renamed SDL function is a runtime load failure, not a build error. Probe the SDL version at startup and fail loudly with a clear message rather than crashing mid-render.
-2. **Do not use the binding's embedded `libSDL3.so` blob.** `binsdl.Load()` embeds a prebuilt library that is not guaranteed to have KMSDRM compiled in. Use `sdl.LoadLibrary()` against the system SDL3, and verify at startup that the KMSDRM video driver is present.
+2. **Do not use the binding's embedded `libSDL3.so` blob.** `binsdl.Load()` embeds a prebuilt library that is not guaranteed to have KMSDRM compiled in. Use `sdl.LoadLibrary()` against the system SDL3, and verify at startup that the expected video driver (KMSDRM on headless Linux, or the platform default on a desktop) is present.
 
 Neither binding is 1.0. Wrap SDL access behind `internal/display/output` so the binding is replaceable.
 
@@ -26,8 +26,8 @@ Neither binding is 1.0. Wrap SDL access behind `internal/display/output` so the 
 
 SDL3 offers a modern `SDL_GPU` API alongside the traditional 2D `SDL_Renderer`. For this project the 2D renderer is the correct choice, for two independent reasons:
 
-- **SDL_GPU on Linux is Vulkan-only.** There is [no OpenGL backend and there will not be one](https://github.com/libsdl-org/SDL/issues/13292). On a Pi that means going through Mesa's V3DV driver, which has been made to work under KMSDRM but requires hand-built Mesa and libdrm.
-- **The Pi's Vulkan driver cannot import the decoder's frame format.** mpv 0.40 switched to Vulkan by default and Pi zero-copy immediately broke with `DRM modifier 0x07 0xca804 not available for format r8`; the workaround is forcing `--gpu-api=opengl` ([mpv#16136](https://github.com/mpv-player/mpv/issues/16136)). SDL_GPU and Pi zero-copy are mutually exclusive today, so choosing SDL_GPU would foreclose the optimisation we most want to keep available.
+- **SDL_GPU on Linux is Vulkan-only.** There is [no OpenGL backend and there will not be one](https://github.com/libsdl-org/SDL/issues/13292). On Raspberry Pi that means going through Mesa's V3DV driver, which has been made to work under KMSDRM but requires hand-built Mesa and libdrm.
+- **Some embedded Vulkan drivers cannot import the decoder's frame format.** mpv 0.40 switched to Vulkan by default and Pi zero-copy immediately broke with `DRM modifier 0x07 0xca804 not available for format r8`; the workaround is forcing `--gpu-api=opengl` ([mpv#16136](https://github.com/mpv-player/mpv/issues/16136)). SDL_GPU and Pi-style zero-copy are mutually exclusive today, so choosing SDL_GPU would foreclose the optimisation we most want to keep available on constrained boards.
 
 SDL_Renderer is not a compromise here. As of **SDL 3.4.0** the 2D renderer gained real shader access through `SDL_CreateGPURenderer()`, `SDL_CreateGPURenderState()`, and `SDL_SetGPURenderStateFragmentUniforms()`, plus YUV texture and HDR colorspace support in that path. That is our escape hatch for masked transitions, used only where a transition genuinely needs a shader.
 
@@ -35,9 +35,9 @@ SDL_Renderer is not a compromise here. As of **SDL 3.4.0** the 2D renderer gaine
 
 ## Output Initialisation
 
-### Raspberry Pi (KMSDRM)
+### Headless Linux (KMS/DRM)
 
-Running without a desktop session means SDL talks directly to the kernel's DRM/KMS interface.
+Running without a desktop session means SDL talks directly to the kernel's DRM/KMS interface. This is the path used on Raspberry Pi OS Lite and other headless Linux installs with an attached panel.
 
 ```
 SDL_VIDEO_DRIVER=kmsdrm

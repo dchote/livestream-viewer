@@ -15,8 +15,11 @@ import (
 
 	"github.com/dchote/livestream-viewer/internal/config"
 	"github.com/dchote/livestream-viewer/internal/database"
+	"github.com/dchote/livestream-viewer/internal/events"
 	"github.com/dchote/livestream-viewer/internal/handler"
 	"github.com/dchote/livestream-viewer/internal/rest"
+	"github.com/dchote/livestream-viewer/internal/schedule"
+	"github.com/dchote/livestream-viewer/internal/source/resolver"
 )
 
 var (
@@ -26,8 +29,6 @@ var (
 )
 
 func main() {
-	runtime.LockOSThread()
-
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Printf("livestream-viewer %s (commit: %s, built: %s)\n", version, commit, buildTime)
 		os.Exit(0)
@@ -84,15 +85,29 @@ func main() {
 		feFS = nil
 	}
 
+	// SDL (when the display engine lands) requires the thread that initialises
+	// it to own presentation for the process lifetime. Only lock then — locking
+	// the main OS thread in headless/control-plane mode buys nothing and has
+	// been observed to interfere with signal delivery on some platforms.
 	if cfg.DisplayEnabled {
-		slog.Warn("display engine requested but not implemented in this scaffold; continuing API-only")
+		runtime.LockOSThread()
+		slog.Info("display output requested; render engine is not implemented, scheduler will still run")
 	}
+
+	rt := schedule.New(nil, cfg.DisplayEnabled)
+	hub := events.NewHub()
 
 	srv := &http.Server{
 		Addr:              cfg.Addr(),
-		Handler:           rest.New(db, cfg, feFS),
+		Handler:           rest.New(db, cfg, feFS, rt, hub, resolver.Tools{}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	// Tick only once rest.New has registered the SSE listener and applied the
+	// initial snapshot; earlier ticks would publish into the void.
+	schedCtx, schedCancel := context.WithCancel(context.Background())
+	defer schedCancel()
+	go rt.Run(schedCtx)
 
 	go func() {
 		slog.Info("listening", "addr", cfg.Addr(), "frontend_embed", cfg.FrontendEmbed && feFS != nil)
@@ -104,11 +119,27 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	sig := <-sigCh
+	slog.Info("shutting down", "signal", sig.String())
+
+	// A second Ctrl+C (or SIGTERM) forces exit if graceful shutdown stalls —
+	// typically on a blocked SSE write that has not yet noticed the cancelled
+	// request context.
+	go func() {
+		sig := <-sigCh
+		slog.Warn("forced exit", "signal", sig.String())
+		os.Exit(1)
+	}()
+
+	schedCancel()
+	hub.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		slog.Error("shutdown", "err", err)
+		slog.Error("graceful shutdown timed out, closing", "err", err)
+		_ = srv.Close()
 	}
+	slog.Info("stopped")
 }

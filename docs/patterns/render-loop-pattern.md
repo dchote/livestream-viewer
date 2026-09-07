@@ -4,7 +4,7 @@
 
 The render loop is the heart of the display plane. Its structure is dictated by one hard platform constraint and one design commitment.
 
-**The constraint:** SDL rendering and texture uploads must happen on the thread that initialised SDL, and on the Pi that thread must hold DRM master for the process lifetime.
+**The constraint:** SDL rendering and texture uploads must happen on the thread that initialised SDL, and on headless Linux that thread typically holds DRM master for the process lifetime.
 
 **The commitment:** the loop never blocks. Not on I/O, not on a mutex held by anything outside the display plane, not on a decoder, not on the database. A wall that freezes is worse than a wall showing a placeholder.
 
@@ -14,7 +14,12 @@ Everything below follows from those two.
 
 ```go
 func main() {
-    runtime.LockOSThread() // held for the process lifetime; never unlocked
+    // Only when display output is enabled. Headless control-plane mode
+    // must not pin the main OS thread — it interferes with clean signal
+    // handling on some platforms.
+    if displayEnabled {
+        runtime.LockOSThread()
+    }
 
     // ... bootstrap config, open database, start control plane goroutines ...
 
@@ -145,4 +150,4 @@ The loop is deliberately structured so that most of it is testable without a dis
 
 Only `draw`, `present`, and `uploadTextures` need real SDL, and those are thin. Tests that require SDL are behind a build tag and are not part of the default `go test ./...` run.
 
-Never start the display engine in a unit test. It takes the main thread and, on a Pi, DRM master.
+Never start the display engine in a unit test. It takes the main thread and, on headless Linux, DRM master.

@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"testing"
 
+	"errors"
 	"github.com/dchote/livestream-viewer/internal/config"
 	"github.com/dchote/livestream-viewer/internal/database"
+	"github.com/dchote/livestream-viewer/internal/source/resolver"
 )
 
 func testServer(t *testing.T) http.Handler {
@@ -26,7 +28,9 @@ func testServer(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(db, cfg, nil)
+	return New(db, cfg, nil, nil, nil, resolver.Tools{
+		LookPath: func(string) (string, error) { return "", errors.New("missing") },
+	})
 }
 
 func TestHealth(t *testing.T) {

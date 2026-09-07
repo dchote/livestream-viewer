@@ -4,7 +4,8 @@ import "testing"
 
 func TestCatalogueIDs(t *testing.T) {
 	want := []string{
-		"1x1", "2x1", "1x2", "2x2", "3x3", "4x4",
+		"full",
+		"2x1", "1x2", "2x2", "3x3", "4x4",
 		"1+3", "1+5", "1+7", "1+12",
 		"3v", "1v+6",
 		"2p", "1p+6",
@@ -67,5 +68,25 @@ func TestSolveRoundsToPixels(t *testing.T) {
 func TestByIDUnknown(t *testing.T) {
 	if _, ok := ByID("nope"); ok {
 		t.Fatal("expected miss")
+	}
+}
+
+// "1x1" was retired in favour of the full-bleed layout, which has identical
+// geometry. Databases are migrated by database.migrateRetiredLayouts.
+func TestRetired1x1IsGone(t *testing.T) {
+	if _, ok := ByID("1x1"); ok {
+		t.Fatal("1x1 should be retired in favour of the full-bleed layout")
+	}
+	full, ok := ByID(FullBleedID)
+	if !ok {
+		t.Fatal("full-bleed layout missing")
+	}
+	if full.Cells != 1 {
+		t.Fatalf("full-bleed cells = %d, want 1", full.Cells)
+	}
+	for _, l := range All() {
+		if l.ID != FullBleedID && l.Cells == 1 {
+			t.Errorf("%s is a second single-cell layout; full is the only one", l.ID)
+		}
 	}
 }

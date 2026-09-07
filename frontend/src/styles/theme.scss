@@ -133,6 +133,17 @@
   color: #fff;
 }
 
+.brand-dialog.v-overlay > .v-overlay__content {
+  height: auto;
+  max-height: calc(100% - 48px);
+}
+
+.brand-dialog.v-dialog--fullscreen > .v-overlay__content {
+  height: 100%;
+  max-height: 100%;
+  width: 100%;
+}
+
 .dialog-card-layout {
   display: flex;
   flex-direction: column;
@@ -144,12 +155,16 @@
   height: 100%;
 }
 
-.dialog-card-content {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+.brand-dialog-card > .v-card-text.dialog-card-content {
+  flex: 0 1 auto;
   overflow-y: auto;
   min-height: 0;
+}
+
+.dialog-card-layout--fullscreen > .v-card-text.dialog-card-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
 }
 
 .dialog-card-actions {
@@ -205,7 +220,86 @@
   margin: 0 auto 20px;
 }
 
-.checkbox-compact {
-  padding-top: 0;
-  padding-bottom: 0;
+/*
+ * Centred narrow column for single-card auth pages (login, change password).
+ * Replaces `v-row justify="center"` + `v-col` so no page needs the grid.
+ */
+.page-narrow {
+  max-width: 560px;
+  margin-inline: auto;
+}
+
+/*
+ * Side-by-side form fields — replaces `v-row`/`v-col`, whose column gutters
+ * stack with `mb-4` and leave auto-width siblings flush. Gap applies on both
+ * axes so the stacked (mobile) case needs no per-child margin, which is where
+ * the double-spacing bugs came from.
+ */
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Row-action clusters sit at their natural width instead of sharing the split. */
+.field-row__actions {
+  flex: 0 0 auto;
+}
+
+@media (min-width: 600px) {
+  .field-row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+/*
+ * Switch clusters — Vuetify `.v-switch.v-input` is `flex: 0 1 auto`, which still lets
+ * shrink/width fight inline `gap`. Pin width and use a fixed cluster gap (16px).
+ */
+.switch-cluster {
+  gap: 16px;
+}
+
+.switch-cluster > .v-switch {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
+/*
+ * Expansion panel body — Vuetify defaults to 8px top, which crowds outlined fields
+ * and section labels under the title. Match card-body rhythm (16px; 20px with fields).
+ * Subtle inset wash separates expanded content from the title row without elevation.
+ */
+.v-expansion-panel-text {
+  background: rgba(var(--v-theme-on-surface), 0.015);
+}
+
+.v-theme--dark .v-expansion-panel-text {
+  background: rgba(var(--v-theme-on-surface), 0.025);
+}
+
+.v-expansion-panel-text__wrapper {
+  padding: 16px 24px 16px;
+}
+
+.v-expansion-panel-text__wrapper:has(.v-field) {
+  overflow: visible;
+  padding-top: 20px;
+}
+
+/*
+ * Brief focus ring after creating a screen or tour entry. Outline only — never
+ * elevate the panel (see expansion-panels rule).
+ */
+.v-expansion-panel.panel-flash {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+  transition: outline-color 0.4s ease;
 }

@@ -2,7 +2,7 @@
 
 Native hardware-accelerated livestream viewer and video wall. Use **Open Web UI** to manage sources, screens, and the tour. The REST API and embedded web UI run via Home Assistant ingress.
 
-This scaffold boots the control plane (API + UI). Display output on the attached panel lands in a later stage.
+This scaffold boots the control plane (API + UI). Display output on an attached panel lands in a later stage. The add-on runs on Home Assistant OS hosts generally; low-cost ARM boards (including Raspberry Pi) are common deployment targets and are optimised for once the display engine lands.
 
 ## Installation
 
@@ -16,7 +16,7 @@ This scaffold boots the control plane (API + UI). Display output on the attached
 
 - **HTTP port** — Management UI and API (default 8099). Used by ingress.
 - **Log level** — `debug`, `info`, `warn`, or `error`.
-- **Display engine** — Start the display engine. Requires `/dev/dri`. Leave enabled on a Pi with an attached panel.
+- **Display engine** — Start the display engine. Requires `/dev/dri` when driving a panel. Leave enabled on a host with an attached display; disable for control-plane-only use.
 
 Data (database, uploads, JWT secret) is stored in the add-on’s persistent `/data` directory.
 

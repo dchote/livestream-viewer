@@ -1,0 +1,26 @@
+---
+description: Table row actions — no wrap; icons for edit/delete; labeled text for uncommon verbs
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# Table row actions
+
+- Actions column: `align: 'end'`, fixed `width` sized for the control cluster.
+- Cell: `d-flex justify-end align-center flex-nowrap` + `style="gap: 4px"` (or `8px`). **Never `flex-wrap`** — actions stay on one line.
+- **Edit / Delete / Close / reorder**: icon buttons (`icon`, `variant="text"`, `size="small"`) with `aria-label`.
+- **Uncommon verbs** (e.g. Probe): keep a short **text** button so the action stays discoverable.
+- Users (many actions / self-guards): overflow `v-menu` with ⋮ is fine.
+- Hide secondary data columns on mobile rather than wrapping actions. Wrap the table for horizontal scroll when needed.
+
+```vue
+<div class="d-flex justify-end align-center flex-nowrap" style="gap: 4px">
+  <v-btn variant="text" size="small" class="flex-shrink-0">Probe</v-btn>
+  <v-btn icon variant="text" size="small" aria-label="Edit">
+    <v-icon size="small">mdi-pencil</v-icon>
+  </v-btn>
+  <v-btn icon variant="text" size="small" color="error" aria-label="Delete">
+    <v-icon size="small">mdi-delete</v-icon>
+  </v-btn>
+</div>
+```

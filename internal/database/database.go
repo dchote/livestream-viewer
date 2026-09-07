@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/dchote/livestream-viewer/internal/config"
+	"github.com/dchote/livestream-viewer/internal/display/layout"
+	"github.com/dchote/livestream-viewer/internal/display/transition"
 	"github.com/dchote/livestream-viewer/internal/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
@@ -39,10 +41,34 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
+	if err := migrateRetiredLayouts(db); err != nil {
+		return nil, err
+	}
+
 	if err := seed(db); err != nil {
 		return nil, err
 	}
 	return db, nil
+}
+
+// retiredLayouts maps layout ids that have been removed from the catalogue to
+// their replacement. Screens created before the removal keep working.
+var retiredLayouts = map[string]string{
+	// "1x1" was geometrically identical to the full-bleed layout.
+	"1x1": layout.FullBleedID,
+}
+
+func migrateRetiredLayouts(db *gorm.DB) error {
+	for old, replacement := range retiredLayouts {
+		res := db.Model(&model.Screen{}).Where("layout = ?", old).Update("layout", replacement)
+		if res.Error != nil {
+			return fmt.Errorf("migrate layout %q: %w", old, res.Error)
+		}
+		if res.RowsAffected > 0 {
+			slog.Info("migrated retired layout", "from", old, "to", replacement, "screens", res.RowsAffected)
+		}
+	}
+	return nil
 }
 
 func seed(db *gorm.DB) error {
@@ -79,7 +105,7 @@ func seed(db *gorm.DB) error {
 			OutputHeight:          1080,
 			OutputRotation:        0,
 			DefaultDwellMS:        30000,
-			DefaultTransitionJSON: `{"type":"cut","duration_ms":0}`,
+			DefaultTransition:     transition.DefaultCut(),
 			AllowSoftwareFallback: true,
 			MaxHWDecoders:         4,
 			ReconnectBackoffMS:    2000,

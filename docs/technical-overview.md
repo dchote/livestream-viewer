@@ -1,8 +1,10 @@
 # Technical Overview
 
-> **Status:** Framework scaffold in progress. The control plane, API shell, and embedded UI exist; treat display-engine and ingest sections as design specification until those stages land.
+> **Status:** Control plane implemented (REST, SQLite, Vue editors, PATH-based probe, headless scheduler, SSE). Treat display-engine and ingest/decode sections as design specification until those stages land.
 
-livestream-viewer is a single Go binary that decodes live video streams with hardware acceleration and composites them onto a physically attached display using SDL3, while serving a Vue 3 + Vuetify management UI and REST API. The primary target is the Raspberry Pi 4 and 5 running headless (no X11, no Wayland, no desktop session).
+livestream-viewer is a single Go binary that decodes live video streams with hardware acceleration and composites them onto a physically attached display using SDL3, while serving a Vue 3 + Vuetify management UI and REST API.
+
+It is **platform-agnostic**: the control plane runs on any Go-supported OS; display output targets Linux DRM/KMS for headless panels and a native SDL window on desktop Linux and macOS for development. Low-cost and embedded boards (Raspberry Pi and similar SBCs) are first-class optimisation targets — hardware decode paths, capacity reporting, and packaging — not a hard requirement to build or operate the management plane.
 
 ## Technology Stack
 
@@ -10,22 +12,22 @@ livestream-viewer is a single Go binary that decodes live video streams with har
 |-----------|-----------|
 | Language | Go 1.25+ |
 | Rendering | SDL3 (3.4+) via `github.com/Zyko0/go-sdl3` |
-| Video driver | KMSDRM on the Pi; native window on a development workstation |
+| Video driver | KMS/DRM on headless Linux; native SDL window on desktop Linux and macOS |
 | Demux and decode | FFmpeg 8.x `libav*` via `github.com/asticode/go-astiav` (cgo) |
-| Hardware decode | V4L2 stateless (HEVC) and stateful M2M (H.264, Pi 4) via FFmpeg `drm` hwaccel |
+| Hardware decode | Platform-specific (e.g. V4L2 on Linux SBCs) via FFmpeg hwaccel; software fallback everywhere |
 | Stream URL resolution | `yt-dlp` invoked as an external subprocess (optional, discovered on `PATH`) |
 | Database | SQLite (GORM) |
 | REST API | Go standard library `net/http` with router |
 | API docs | OpenAPI 3.0 served as Swagger UI at `/docs` |
 | Frontend | Vue 3 (Composition API), Vuetify 3, Vite, Vue Router, Pinia |
 | Frontend embedding | Go `//go:embed` — frontend dist compiled into the binary |
-| Configuration | TOML bootstrap + SQLite runtime config, editable via REST API and UI |
+| Configuration | TOML bootstrap + SQLite runtime config, editable via REST API |
 | Logging | Structured logging (`slog`) |
 | Packaging | Single binary, `.deb` via GoReleaser, Home Assistant add-on image |
 
 ## The Two Planes
 
-The application is not a typical server. It has a hard structural split driven by a platform constraint: **SDL rendering and texture uploads must happen on the thread that initialised SDL**, and on the Pi that thread must hold DRM master for the whole lifetime of the process. Everything else — HTTP, database, stream resolution — is ordinary Go concurrency.
+The application is not a typical server. It has a hard structural split driven by a platform constraint: **SDL rendering and texture uploads must happen on the thread that initialised SDL**, and on headless Linux that thread typically holds DRM master for the whole lifetime of the process. Everything else — HTTP, database, stream resolution — is ordinary Go concurrency.
 
 This produces two planes:
 
@@ -98,23 +100,25 @@ livestream-viewer/
 │   ├── config/                  # Bootstrap (TOML/env/flags) + DB-backed config
 │   ├── database/                # SQLite schema, migrations, repositories
 │   ├── model/                   # Source, Screen, Tile, PlaylistItem, Tour, Transition
-│   ├── rest/                    # Router, middleware, SPA handler, SSE hub
+│   ├── rest/                    # Router, middleware, SPA handler
+│   ├── events/                  # SSE hub (`display.state`)
 │   ├── handler/                 # REST handlers
-│   ├── source/                  # Source registry, probing, lifecycle
+│   ├── source/                  # Source validation, probing, lifecycle
 │   │   └── resolver/            # URL resolution: yt-dlp, direct, file, rtsp
-│   ├── ingest/                  # Demux + decode workers
+│   ├── ingest/                  # Demux + decode workers (not yet implemented)
 │   │   ├── decoder/             # libav decode loop, hwaccel selection
 │   │   └── capability/          # Platform probe: V4L2 devices, codecs, DRM nodes
-│   ├── frame/                   # Frame type, plane layout, pooling, slots
+│   ├── frame/                   # Frame type, plane layout, pooling, slots (not yet implemented)
 │   ├── display/                 # ── Display engine ──
-│   │   ├── engine.go            # Render loop, command handling, state publish
+│   │   ├── engine.go            # Render loop (not yet implemented)
+│   │   ├── strategy/            # Screen/tour validation and immutable snapshot
 │   │   ├── texture/             # Per-source texture cache and upload
 │   │   ├── layout/              # Layout catalogue and tile geometry solver
 │   │   ├── transition/          # Transition catalogue and interpolators
 │   │   ├── compositor/          # Scene assembly and draw ordering
 │   │   └── output/              # SDL init, video driver selection, display modes
-│   ├── schedule/                # Screen tour, dwell timers, playlist stepping
-│   └── preview/                 # Throttled read-back, JPEG encode, MJPEG stream
+│   ├── schedule/                # Headless tour, dwell, playlist, and sequence timers
+│   └── preview/                 # Throttled read-back, JPEG encode, MJPEG stream (not yet implemented)
 ├── api/
 │   └── openapi.yaml             # OpenAPI 3.0 specification
 ├── configs/
@@ -215,7 +219,7 @@ Layouts are declarative: a layout is a list of normalised rectangles in the unit
 
 Keeping layouts as data rather than code means the catalogue is served to the frontend from `GET /api/v1/layouts` and the Preview page renders the same geometry the engine does, from the same numbers.
 
-Initial catalogue: `1x1`, `2x2`, `3x3`, `4x4`, `1+3`, `1+5`, `1+7`, `1+12`, `2x1`, `1x2`, `3v`, `1v+6`, `2p`, `1p+6`. See [Display Strategy Pattern](patterns/display-strategy-pattern.md).
+Catalogue: `full`, `2x1`, `1x2`, `2x2`, `3x3`, `4x4`, `1+3`, `1+5`, `1+7`, `1+12`, `3v`, `1v+6`, `2p`, `1p+6`. `full` is the only single-cell layout — an earlier `1x1` was geometrically identical and has been retired, with existing screens migrated to `full` on startup. See [Display Strategy Pattern](patterns/display-strategy-pattern.md).
 
 ### Transitions
 
@@ -250,19 +254,19 @@ See [Stream Ingest](architecture/stream-ingest.md).
 
 ### Hardware Decode
 
-This is the part of the system most tied to the specific Pi model, and the design has to be explicit about it rather than assuming acceleration is available.
+Decode capacity is host-specific. The application probes what is available at startup and surfaces it through `GET /api/v1/system/info` and in the UI, so a dense grid of software-only streams is an informed choice rather than a silent failure.
+
+Illustrative Linux SBC matrix (see the dedicated doc for full detail):
 
 | Platform | H.264 | HEVC | Interface |
 |----------|-------|------|-----------|
-| Pi 4 | Hardware | Hardware | Stateful V4L2 M2M (`/dev/video10`) for H.264; stateless V4L2 request (`rpivid`, `/dev/video19`) for HEVC |
-| Pi 5 | **Software only** | Hardware (4K60) | Stateless V4L2 request only; the H.264 block was removed from BCM2712 |
-| Desktop dev | Depends | Depends | VA-API or software |
+| Raspberry Pi 4 | Hardware | Hardware | Stateful V4L2 M2M for H.264; stateless V4L2 request for HEVC |
+| Raspberry Pi 5 | **Software only** | Hardware (4K60) | Stateless V4L2 request only; H.264 block removed from BCM2712 |
+| Desktop Linux / macOS | Depends | Depends | VA-API, VideoToolbox, or software |
 
-The Pi 5's removal of the H.264 decoder is the single most consequential fact for capacity planning. Most web and camera sources are H.264, so on a Pi 5 the common case is CPU decode across four Cortex-A76 cores. The application probes the platform at startup, records what is available per codec, and surfaces it through `GET /api/v1/system/info` and in the UI, so a user configuring a 3×3 grid of 1080p H.264 cameras on a Pi 5 is told what they are asking for.
+On constrained hosts the binding limit is usually decode, not compositing. **The baseline design copies frames to system memory** (`hwdownload` to NV12) and uploads them with `SDL_UpdateNVTexture`. Zero-copy paths (DMA-BUF import into GL textures) are platform-specific later optimisations behind a stable frame-delivery interface.
 
-Zero-copy (keeping frames as DMA-BUF handles and importing them into GL textures) is possible but requires the out-of-tree `jc-kynesim/rpi-ffmpeg` fork and handling Broadcom SAND tiled formats, and is not reachable through SDL's public API. **The baseline design copies frames to system memory** (`hwdownload` to NV12) and uploads them with `SDL_UpdateNVTexture`. The frame delivery interface is defined so that the upload step is swappable, making zero-copy a later optimisation behind a stable seam rather than a rewrite.
-
-See [Hardware Decode](architecture/hardware-decode.md) for the full analysis, including the SAND format problem and why SDL_GPU is not viable on the Pi.
+See [Hardware Decode](architecture/hardware-decode.md) for platform notes (including Raspberry Pi SAND / V4L2 details) and the zero-copy analysis.
 
 ### Source Resolution
 
@@ -311,6 +315,7 @@ Served on port `8099` by default (`LSV_HTTP_PORT`), alongside the embedded SPA.
 | Endpoint | Methods | Description |
 |----------|---------|-------------|
 | `/health` | GET | Liveness and readiness |
+| `/api/v1/auth/status` | GET | Unauthenticated: whether first-run setup is required |
 | `/api/v1/auth/login` | POST | JWT login |
 | `/api/v1/auth/me` | GET | Current user |
 | `/api/v1/auth/change-password` | POST | Change password (required when `must_change_password` is set) |
@@ -336,7 +341,7 @@ Served on port `8099` by default (`LSV_HTTP_PORT`), alongside the embedded SPA.
 | `/api/v1/preview/stream` | GET | MJPEG of the composited output |
 | `/api/v1/preview/frame` | GET | Single JPEG snapshot |
 | `/api/v1/events` | GET | Server-Sent Events: display and decoder state |
-| `/api/v1/config` | GET, PATCH | Runtime configuration |
+| `/api/v1/config` | GET, PATCH | Runtime configuration (PATCH is admin-only and sparse) |
 | `/docs` | GET | Swagger UI |
 | `/api/v1/openapi.yaml` | GET | OpenAPI 3.0 specification |
 | `/` | GET | Web management UI (SPA) |
@@ -381,7 +386,7 @@ Two-tier, matching go-mumble-server.
 | `logging.level` | `debug`, `info`, `warn`, `error` |
 | `frontend-embed` | Flag only; serve the embedded SPA |
 
-**Tier 2 — Database** (editable via `GET/PATCH /api/v1/config` and the UI): output resolution and rotation, default transition and dwell time, decoder preferences (allow software fallback, max concurrent hardware decoders), reconnect backoff, offline grace period, preview frame rate and width, and the placeholder card appearance.
+**Tier 2 — Database** (editable via `GET/PATCH /api/v1/config`; no settings page exposes these yet): output resolution and rotation, default transition and dwell time, decoder preferences (allow software fallback, max concurrent hardware decoders), reconnect backoff, offline grace period, preview frame rate and width, and the placeholder card appearance.
 
 TOML values seed the database on first run only. Subsequent changes go through the API.
 
@@ -419,9 +424,9 @@ TOML values seed the database on first run only. Subsequent changes go through t
 
 ### Architecture
 
-- [Display Pipeline](architecture/display-pipeline.md) — SDL3, KMSDRM, compositing, and presentation
+- [Display Pipeline](architecture/display-pipeline.md) — SDL3, KMS/DRM, compositing, and presentation
 - [Stream Ingest](architecture/stream-ingest.md) — Demux, decode, frame handoff, and failure handling
-- [Hardware Decode](architecture/hardware-decode.md) — Raspberry Pi decode capabilities and the zero-copy analysis
+- [Hardware Decode](architecture/hardware-decode.md) — Platform decode capabilities and the zero-copy analysis
 
 ### Patterns
 

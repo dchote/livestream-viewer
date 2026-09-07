@@ -13,15 +13,34 @@ import (
 
 	"github.com/dchote/livestream-viewer/api"
 	"github.com/dchote/livestream-viewer/internal/config"
+	"github.com/dchote/livestream-viewer/internal/display/strategy"
+	"github.com/dchote/livestream-viewer/internal/events"
 	"github.com/dchote/livestream-viewer/internal/handler"
 	"github.com/dchote/livestream-viewer/internal/model"
+	"github.com/dchote/livestream-viewer/internal/schedule"
+	"github.com/dchote/livestream-viewer/internal/source/resolver"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, cfg *config.Config, feFS fs.FS) http.Handler {
-	h := handler.New(db, cfg)
+func New(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub *events.Hub, tools resolver.Tools) http.Handler {
+	if rt == nil {
+		rt = schedule.New(nil, cfg.DisplayEnabled)
+	}
+	if hub == nil {
+		hub = events.NewHub()
+	}
+	h := handler.New(db, cfg, rt, hub)
+	h.Tools = tools
+	rt.SetOnChange(func(st *schedule.State) {
+		hub.PublishDisplayState(st)
+	})
+	if snap, err := strategy.Build(db); err != nil {
+		slog.Error("initial strategy build failed; scheduler starts with no snapshot", "error", err)
+	} else {
+		rt.ApplyStrategy(snap)
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)

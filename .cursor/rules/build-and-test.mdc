@@ -39,7 +39,7 @@ CGO_ENABLED=1 go test -race -timeout=60s ./internal/frame/... ./internal/display
 
 1. **CGO_ENABLED=1** — Required for SQLite and the FFmpeg bindings
 2. **Timeout on tests** — Use `-timeout=30s` (or `60s` with `-race`) to prevent hangs
-3. **Do not run the application for validation** — Use `go build` and `go test` only. The binary takes the main OS thread and, on a Pi, DRM master
+3. **Do not run the application for validation** — Use `go build` and `go test` only. The binary takes the main OS thread when display is enabled and, on headless Linux, DRM master
 4. **Do not start the display engine in a unit test** — The layout solver, transitions, scheduler, and compositor are all designed to be testable without SDL
 5. **SDL-dependent tests go behind the `sdl` build tag** and are excluded from the default run. CI has no display
 6. **No tests that open network streams** — Use recorded fixtures or a synthetic source

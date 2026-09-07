@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Display Engine Rules (MANDATORY)
 
-The render loop runs on the process's main OS thread, pinned with `runtime.LockOSThread()` for the process lifetime. On a Raspberry Pi it holds DRM master. These rules are not stylistic.
+The render loop runs on the process's main OS thread, pinned with `runtime.LockOSThread()` whenever display output is enabled. On headless Linux that thread typically holds DRM master. These rules are not stylistic.
 
 ## Thread Ownership
 

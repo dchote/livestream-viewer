@@ -1,0 +1,37 @@
+---
+description: Save label and dirty-gating for inline editors; Cancel only in dialogs
+globs: frontend/src/**/*.vue
+alwaysApply: false
+---
+
+# Save actions
+
+## Inline / card editors (expansion panels, StandardCard `#actions`)
+
+- Primary label is always **`Save`** — never “Save tour”, “Save screen”, or other compound labels.
+- **`Save` is disabled until the form is dirty** (local draft differs from the last loaded/saved baseline).
+- Do **not** add a Cancel next to Save. Discard by collapsing the panel (reset draft) or leaving without saving.
+
+```vue
+<v-btn
+  color="primary"
+  variant="elevated"
+  :loading="saving"
+  :disabled="!dirty"
+  @click="save"
+>
+  Save
+</v-btn>
+```
+
+## Dialogs
+
+Cancel + primary remain correct — Cancel dismisses the modal without committing.
+
+```vue
+<template #actions>
+  <v-spacer />
+  <v-btn variant="text" class="mr-2" @click="close">Cancel</v-btn>
+  <v-btn color="primary" variant="elevated" @click="save">Save</v-btn>
+</template>
+```

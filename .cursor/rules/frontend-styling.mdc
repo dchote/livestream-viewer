@@ -1,0 +1,53 @@
+---
+description: Frontend rules specific to this appliance — API-driven geometry, SSE state, ingress-safe URLs, shared primitives
+globs: frontend/src/**/*.{vue,js,scss}
+alwaysApply: false
+---
+
+# Frontend, project-specific
+
+General styling lives in the focused rules: `form-inputs`, `margins-and-spacing`,
+`button-spacing`, `expansion-panels`, `save-actions`, `table-row-actions`,
+`list-toolbar`, `no-alert-confirm`. This file covers only what is specific to
+livestream-viewer. Full reference: `docs/patterns/ui-style-guidelines.md` and
+`docs/patterns/frontend-guide.md`.
+
+## Data and state
+
+- **Layout geometry comes from the API.** Render layout pickers and tile editors from the
+  normalised rects in `GET /api/v1/layouts`. Never hard-code cell positions in CSS or
+  component state. Do not hard-code the family list either — derive it from the response,
+  or a family added server-side silently drops its layouts from the picker.
+- **`full` is the only single-cell layout** (`FULL_BLEED_ID` in `@/utils/layouts`). The old
+  `1x1` was retired as a duplicate; databases are migrated on startup.
+- **Live state comes from the SSE stream** via `useEventStream()`. Never poll.
+- **Build every URL through `getIngressBase()`**, including the MJPEG preview `<img src>`,
+  which is easy to miss because it does not go through the API client.
+- **Never distort the preview.** Render it in the output's aspect ratio with letterboxing.
+- **Software decode is a `warning` chip, not `success`.** On constrained hosts it is often the difference
+  between a wall that works and one that does not.
+
+## Shared primitives — use these, do not re-implement
+
+| Need | Use |
+|------|-----|
+| Nothing-here placeholder | `components/common/EmptyState.vue` |
+| Delete confirmation | `components/common/ConfirmDeleteDialog.vue` |
+| Any other modal | `components/common/StandardDialog.vue` |
+| Password input | `components/common/PasswordField.vue` |
+| Page error / success alerts | `composables/useFeedback.js` |
+| Screen or tour write body | `screenPayload` / `tourPayload` in `@/utils/payloads` |
+| Fit modes, select items, name lookup | `@/utils/formatters` |
+| Password policy | `@/utils/passwords` (mirrors `model.MinPasswordLength`) |
+
+## Dirty tracking and payloads
+
+The Save-enabled check and the request body **must** come from the same function
+(`screenPayload`, `tourPayload`). Building them separately lets Save enable on one shape
+and send another.
+
+## Feedback
+
+- Page-level alerts come from `useFeedback()`. Success is transient and auto-clears; never
+  assign a success message that nothing resets.
+- Alerts go **above** the content they describe, with `density="compact"` and `mb-4`.

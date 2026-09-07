@@ -18,19 +18,12 @@
       hide-details="auto"
       autocomplete="off"
       class="mb-4"
-      style="max-width: 320px;"
     />
-    <v-text-field
+    <PasswordField
       v-model="form.password"
       label="Temporary password"
-      type="password"
-      variant="outlined"
-      density="compact"
-      hide-details="auto"
       autocomplete="new-password"
-      class="mb-4"
-      style="max-width: 320px;"
-      hint="At least 8 characters. They will be asked to change it on login."
+      :hint="`${PASSWORD_HINT}. They will be asked to change it on login.`"
       persistent-hint
     />
     <v-select
@@ -41,8 +34,6 @@
       density="compact"
       hide-details="auto"
       autocomplete="off"
-      class="mb-4"
-      style="max-width: 320px;"
     />
     <template #actions>
       <v-spacer />
@@ -58,6 +49,8 @@
 import { reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import StandardDialog from '@/components/common/StandardDialog.vue'
+import PasswordField from '@/components/common/PasswordField.vue'
+import { PASSWORD_HINT, PASSWORD_TOO_SHORT, passwordTooShort } from '@/utils/passwords'
 import { ROLE_OPTIONS, ROLE_USER } from '@/utils/roles'
 
 const props = defineProps({
@@ -107,8 +100,8 @@ function submit() {
     error.value = 'Username is required'
     return
   }
-  if (form.password.length < 8) {
-    error.value = 'Password must be at least 8 characters'
+  if (passwordTooShort(form.password)) {
+    error.value = PASSWORD_TOO_SHORT
     return
   }
   emit('save', {

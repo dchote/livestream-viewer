@@ -1,2 +1,2 @@
-// Package resolver will resolve YouTube (yt-dlp), RTSP, file, and direct URLs. Not implemented in this scaffold.
+// Package resolver discovers yt-dlp/ffprobe and resolves playable URLs.
 package resolver

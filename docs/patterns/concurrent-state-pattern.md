@@ -1,6 +1,6 @@
 # Concurrent State Pattern
 
-> **Status:** Design. Not yet implemented.
+> **Status:** Command and state channels are implemented by the headless `schedule.Runtime` (no SDL). Frame slots and the render-thread engine remain design until the display stage.
 
 Three kinds of thread coexist in this process and each has different rules. Getting the boundaries right is what keeps the render loop non-blocking and the control plane ordinary.
 
@@ -44,6 +44,8 @@ type SourceReady   struct{ SourceID int64; Slot *frame.Slot }
 type SourceLost    struct{ SourceID int64; Reason error }
 type SetPreview    struct{ Enabled bool; FPS int; Width int }
 ```
+
+Until the SDL engine exists, `internal/schedule.Runtime` is the Stage-4 stand-in: the same command set (`ApplyStrategy`, `Next`, `Previous`, `Goto`, `Pause`, `Resume`) and an `atomic.Pointer` state snapshot that `GET /api/v1/display/state` and the SSE hub publish. Stage 4 should wrap this runtime rather than replace the command/state types.
 
 Rules:
 

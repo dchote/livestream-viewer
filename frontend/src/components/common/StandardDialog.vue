@@ -1,5 +1,6 @@
 <template>
   <v-dialog
+    class="brand-dialog"
     :model-value="modelValue"
     :max-width="maxWidth"
     :fullscreen="fullscreen"
@@ -14,7 +15,7 @@
         'dialog-card-layout--fullscreen': hasActions && fullscreen,
       }"
     >
-      <template v-if="showHeader">
+      <template v-if="title || $slots.header">
         <v-card-title class="d-flex align-center justify-space-between">
           <slot name="header">
             <span class="text-h6">{{ title }}</span>
@@ -31,12 +32,8 @@
         <v-divider />
       </template>
 
-      <v-card-text
-        :class="[
-          contentPadding,
-          { 'dialog-card-content': hasActions },
-        ]"
-      >
+      <!-- Body padding comes from the theme; do not add pa-* here. -->
+      <v-card-text :class="{ 'dialog-card-content': hasActions }">
         <slot />
       </v-card-text>
 
@@ -82,17 +79,9 @@ defineProps({
     type: Boolean,
     default: false,
   },
-  showHeader: {
-    type: Boolean,
-    default: true,
-  },
   scrim: {
     type: [Boolean, String],
     default: true,
-  },
-  contentPadding: {
-    type: String,
-    default: '',
   },
 })
 

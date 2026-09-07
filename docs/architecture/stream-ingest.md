@@ -10,9 +10,9 @@ This document covers the path from a configured source to a frame sitting in a s
 
 Almost every Go project in this space shells out to the `ffmpeg` binary. [go2rtc](https://github.com/AlexxIT/go2rtc) is pure Go for protocol handling and spawns `ffmpeg` for anything needing a codec. [MediaMTX](https://github.com/bluenviron/mediamtx) deliberately does not decode at all. [Frigate](https://github.com/blakeblackshear/frigate)'s birdseye multi-camera view — the closest functional analogue to this project — composites in Python and pushes rawvideo through a named pipe.
 
-The subprocess approach buys real things: crash isolation, trivial upgrades, no cgo, and the ability to swap in the Raspberry Pi FFmpeg fork without recompiling. It is genuinely the right call for many projects.
+The subprocess approach buys real things: crash isolation, trivial upgrades, no cgo, and the ability to swap in a platform-specific FFmpeg build (for example a Raspberry Pi fork) without recompiling. It is genuinely the right call for many projects.
 
-It is the wrong call here, for one arithmetic reason. Raw NV12 at 1080p30 is approximately **93 MB/s per stream** through a pipe, and every byte is a decoder→kernel→process copy. A 3×3 wall is roughly 840 MB/s of pure copying, which saturates Raspberry Pi memory bandwidth before a single pixel is composited. Frigate's birdseye CPU cost is a well-known complaint and is good evidence for the alternative. It also adds at least a frame of buffering per hop, and it permanently forecloses zero-copy.
+It is the wrong call here, for one arithmetic reason. Raw NV12 at 1080p30 is approximately **93 MB/s per stream** through a pipe, and every byte is a decoder→kernel→process copy. A 3×3 wall is roughly 840 MB/s of pure copying, which saturates memory bandwidth on low-cost boards before a single pixel is composited. Frigate's birdseye CPU cost is a well-known complaint and is good evidence for the alternative. It also adds at least a frame of buffering per hop, and it permanently forecloses zero-copy.
 
 **We link libav in-process via cgo.**
 
@@ -110,8 +110,9 @@ Audio packets are dropped before they reach a decoder. This is not merely a feat
 At startup the capability prober inspects the platform once and caches the result:
 
 - DRM render nodes under `/dev/dri`
-- V4L2 M2M devices (`/dev/video10` and neighbours on a Pi 4)
-- V4L2 stateless request devices (`/dev/video19` + `/dev/media2`, `rpivid`)
+- V4L2 M2M devices (for example `/dev/video10` and neighbours on a Raspberry Pi 4)
+- V4L2 stateless request devices (for example `/dev/video19` + `/dev/media*`, `rpivid` on Pi)
+- Desktop hwaccels where present (VA-API, VideoToolbox, …)
 - Which FFmpeg hwaccels and decoders the linked libav actually offers
 - VA-API on development machines
 
@@ -123,7 +124,7 @@ Details, including the Pi 4 versus Pi 5 divergence, are in [Hardware Decode](har
 
 ### Frame Conversion
 
-Hardware-decoded frames on the Pi are not linear NV12 — they are Broadcom **SAND** tiled. The baseline path transfers them to system memory and detiles to linear NV12 (`hwdownload,format=nv12` in filter terms), which is exactly what other Pi 5 projects do. The cost is one copy plus a detile per frame per stream; at 1080p that is manageable on A76 cores.
+Hardware-decoded frames on some SBCs are not linear NV12 — on Raspberry Pi they are Broadcom **SAND** tiled. The baseline path transfers them to system memory and detiles to linear NV12 (`hwdownload,format=nv12` in filter terms). The cost is one copy plus a detile per frame per stream; at 1080p that is manageable on modern Cortex-A cores.
 
 Software-decoded frames arrive as YUV420P and are converted to NV12 so the renderer has one upload path. If profiling shows this conversion mattering, the renderer can grow an IYUV path via `SDL_UpdateYUVTexture`; the frame interface already carries the plane count and format.
 
@@ -162,7 +163,7 @@ Every state change is published over Server-Sent Events (`GET /api/v1/events`) s
 
 `POST /api/v1/sources/:id/probe` opens the source, reads enough to determine codec, resolution, frame rate, and pixel format, decodes one frame for a thumbnail, and closes. The result is cached on the source record.
 
-Probing is what makes the Settings UI honest: it can tell the user, before they build a 3×3 grid, that six of their cameras are H.264 and this is a Pi 5.
+Probing is what makes the Settings UI honest: it can tell the user, before they build a 3×3 grid, that six of their cameras are H.264 and this host has no hardware path for that codec.
 
 ## References
 

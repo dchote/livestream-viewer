@@ -1,6 +1,6 @@
 # UI Style and Guidelines
 
-> **Status:** Implemented for the management UI shell. Domain editors (layout picker, tile editor) land with later stages.
+> **Status:** Implemented for the management UI, including layout picker, tile/playlist/tour editors, source forms, and PasswordField.
 
 This document defines the visual design standards for the livestream-viewer management frontend. All UI follows these guidelines for consistency.
 
@@ -20,13 +20,18 @@ Page shell density (`v-container.page-content`) follows the 8wi interior-page pa
 
 ### Navigation Pattern
 
-- **List → Detail**: Primary entities (sources, screens) are listed on their settings page. Selecting one opens its editor.
-- **Edit in detail header**: A detail view's header carries a right-aligned Edit button or action menu.
+- **Sources**: a `v-data-table` whose rows open a **StandardDialog** form. Row actions are right-aligned icon buttons that never wrap (see `table-row-actions`).
+- **Screens and tour entries**: **`v-expansion-panels`** (`multiple`, `flat`, `variant="accordion"`, start collapsed) inside their StandardCard, with the editor in the expanded panel. Dense nested editors (e.g. TransitionEditor) live inside that panel.
+
+There is no separate detail *page* for any entity, and therefore no "Edit in detail header" pattern — editing happens in a dialog (Sources, Users) or in an expansion panel (Screens, Tour).
 
 ### Forms
 
-- Use `mb-4` between form elements.
-- Form actions (Save, Cancel) go at the bottom of the form, right-aligned: `d-flex justify-end mt-4`. Use `mr-2` on the first button.
+- Use `mb-4` between stacked form elements (gap on the upper field).
+- Side-by-side fields: the **`field-row`** theme class (see Spacing and Layout) — never `v-row`/`v-col`.
+- Switch / chip / toolbar clusters: buttons/chips use `style="gap: 8px"`; boolean settings use **`v-switch inset`** in a `switch-cluster` row (16px gap).
+- **Inline / card editors** (expansion panels, StandardCard `#actions`): primary action label is **`Save`** — never “Save tour”, “Save screen”, etc. Enable Save only when the form is dirty; do not pair it with a Cancel that only reverts. Discard unsaved work by collapsing the panel or leaving without saving.
+- **Dialogs** still use Cancel + primary (Save / Delete / …) because Cancel dismisses the modal.
 
 ### Dialogs
 
@@ -71,6 +76,70 @@ Do not use `variant="outlined"` on StandardCard — the theme supplies the borde
 
 ## Spacing and Layout
 
+Aligned with the 8wi design-guide spacing model (4px Vuetify grid). Prefer utilities over custom CSS.
+
+### 4px grid
+
+| Class | Typical px |
+|-------|------------|
+| `*-2` | 8px |
+| `*-3` | 12px |
+| `*-4` | 16px |
+| `*-5` | 20px |
+
+### Prefer Vuetify utilities
+
+Use `pa-*`, `ma-*`, `mb-*`, etc. in templates. Do **not** add `theme.scss` rules that only restate Vuetify spacing. Reserve theme CSS for brand chrome and structural shells (`.page-content`, StandardCard).
+
+### Vertical rhythm: `mb-*`, not `mt-*`
+
+Put the gap on the **upper** element. Avoid `mt-*` for section spacing (double-spacing bugs).
+
+| Context | Spacing |
+|---------|---------|
+| Stacked form fields | `mb-4` |
+| Section label → content | `mb-2` / `mb-3` on the label |
+| Cards / alerts on a page | `mb-4` |
+| Divider before a detail block | `mb-4` on the divider |
+
+### Control clusters: inline `gap`
+
+Switches, chips, toolbar buttons, and wrap rows:
+
+```vue
+<div class="d-flex align-center flex-wrap" style="gap: 8px">
+```
+
+| Cluster | Spacing |
+|---------|---------|
+| Buttons / chips in a row | `style="gap: 8px"` |
+| Switches in a row | class `switch-cluster` (16px) |
+| Side-by-side form fields | class `field-row` (16px, both axes) |
+
+#### `field-row`
+
+```vue
+<div class="field-row mb-4">
+  <v-select label="Screen" … />
+  <v-text-field label="Dwell time (seconds)" style="max-width: 200px;" … />
+  <div class="field-row__actions d-flex align-center" style="gap: 4px">…</div>
+</div>
+```
+
+Children split the row evenly (`flex: 1 1 0`); cap a field that should stay narrow with
+`style="max-width: …px"`, and give a trailing icon cluster `field-row__actions` so it sits at
+its natural width. Below `sm` the row stacks and the same 16px gap applies vertically, so
+children need **no** margin of their own — adding `mb-4 mb-sm-0` is the double-spacing bug
+this class exists to prevent.
+
+Centred single-card pages (login, change password) use `page-narrow` on the `v-container`.
+
+**`v-row` / `v-col` are not used in this codebase.** Column gutters stack with `mb-4` and
+leave auto-width siblings flush. Do **not** rely on Vuetify `ga-*` / `gap-*` utilities
+(unreliable across versions); use inline `style="gap: …"` or a theme cluster class.
+
+Simple Cancel + Save pairs may keep `class="mr-2"` on the first button.
+
 ### Page Layout
 
 - **Main content**: Layouts must **not** add padding around the slot. Use `v-main` with the slot as a direct child.
@@ -78,13 +147,25 @@ Do not use `variant="outlined"` on StandardCard — the theme supplies the borde
 
 ### Content Padding
 
-- Use responsive padding: `pa-3 pa-sm-6` or `pa-3 pa-sm-4`.
+- Card/dialog body padding comes from StandardCard / StandardDialog theme classes — do not add extra `pa-4` on `v-card-text`.
+- For one-off dense regions outside those shells, prefer `pa-3 pa-sm-4` over inventing custom padding.
 
 ### Tables and Lists
 
-- **Primary lists** (sources, screens, tour entries): `density="comfortable"`.
+- **Primary lists** (sources, users): `density="comfortable"` on `v-data-table`.
+- **Screens and tour entries**: `v-expansion-panels` with `multiple`, `flat`, and `variant="accordion"` — never elevated panels inside a StandardCard.
 - **Nested or auxiliary tables** (inside dialogs, secondary sections): `density="compact"`.
 - **v-data-table**: Hide pagination and footer by default with an empty `#bottom` slot. Use `:items-per-page="50"`.
+- **Actions column**: `align: 'end'` on the header; cell content in `d-flex justify-end align-center flex-nowrap` with `style="gap: 4px"` — **never wrap** row actions onto a second line. Use **icon buttons** for Edit / Delete (with `aria-label`); keep a short **text** button for uncommon verbs like Probe. Users may use a ⋮ overflow menu when actions need tooltips/guards. Drop secondary columns (e.g. Probe summary) below the mobile breakpoint rather than crushing the row. Wrap the table for horizontal scroll when needed.
+
+### Expansion panels
+
+- Always **`flat`** — elevated/shadowed panels look wrong nested in StandardCard and fight the flat card chrome.
+- Prefer `variant="accordion"` for flush stacked rows.
+- Use `multiple` when several items may be edited at once; start with all collapsed (`v-model` empty array). Do not set `mandatory`.
+- Put reorder/delete controls in the title with `@click.stop`; leave the default expand chevron alone (do not replace `#actions` unless you re-render the expand icon).
+- **Body inset** (theme): `.v-expansion-panel-text__wrapper` uses `16px` top/side/bottom (Vuetify’s `8px` top is too tight). When the body contains a `.v-field`, top becomes `20px` so outlined floating labels clear the title. Do not compensate with one-off `pt-*` on each panel.
+- **Body wash** (theme): `.v-expansion-panel-text` gets a very light `on-surface` tint (`0.015` light / `0.025` dark) so expanded content reads as an inset region without elevation or a hard border.
 
 ### Border Radius
 
@@ -110,50 +191,68 @@ Do not use `variant="outlined"` on StandardCard — the theme supplies the borde
 
 - **Primary actions**: `variant="elevated"`, `color="primary"`
 - **Secondary actions**: `variant="outlined"` or `variant="text"`
-- **Button groups — REQUIRED**: **NEVER** place adjacent buttons without spacing. Add `class="mr-2"` to the first/left button. Do NOT use `gap`.
-- **Form action buttons**: bottom of the form, right-aligned, in a `d-flex justify-end mt-4` wrapper.
+- **Button / control clusters — REQUIRED**: never place adjacent controls flush. Prefer `d-flex` + `style="gap: 8px"`; Cancel/Save pairs may use `mr-2` on the first button. Do not use Vuetify `ga-*`.
+- **Form action buttons**:
+  - Inline / expansion-panel / card editors: **`Save` only**, `:disabled` when clean. Label is always `Save`.
+  - Dialogs: Cancel + primary; Cancel dismisses the dialog.
 
 ### Form Inputs
 
 - **All inputs**: `variant="outlined"`, `density="compact"`, `hide-details="auto"`
 - **Login/register**: may use `density="comfortable"` for accessibility
-- **`autocomplete` — REQUIRED**:
-  - Non-auth text fields and textareas: always `autocomplete="off"`
-  - Auth forms only: `autocomplete="username"`, `"current-password"`, or `"new-password"`
-- **Fixed-width inputs**: `style="max-width: 320px;"` (or 200/400 as appropriate)
+- **`autocomplete` — REQUIRED** (HTML / Vuetify tokens only — no readonly or decoy hacks):
+  - Non-credential text fields: `autocomplete="off"`
+  - **Login only:** `autocomplete="username"` and `autocomplete="current-password"`
+  - **Create user / source credentials / other non-login secrets:** username `autocomplete="off"`; password `autocomplete="new-password"` (browsers ignore `"off"` on password fields)
+  - **Change password:** current `autocomplete="current-password"`; new + confirm `autocomplete="new-password"`
+- **Fixed-width inputs**: `style="max-width: 320px;"` (or 200/400 as appropriate) on page forms; dialog fields typically fill the dialog width
 - **Duration inputs**: always labelled with their unit and stored in milliseconds. Display seconds where that reads better, but never leave the unit ambiguous.
+- **Password inputs**: always `PasswordField` (`components/common/PasswordField.vue`) with a show/hide toggle. Never a raw `type="password"` field. Hidden by default; `aria-label` is `Show password` / `Hide password`.
 
-### Checkboxes
+### Checkboxes and switches
 
-- Always `density="compact"`
-- Add `class="checkbox-compact"` for minimal padding
+- Prefer **`v-switch` with `inset`** for boolean settings (Enabled, Loop, etc.). Props: `color="primary"`, `inset`, `density="compact"`, `hide-details="auto"`.
+- Switch clusters: wrap in `d-flex align-center flex-wrap switch-cluster` (theme sets **16px** gap and pins each `.v-switch` to `flex: 0 0 auto` so spacing is visible). Do not rely on bare `style="gap: 8px"` around switches — Vuetify’s input flex shrink fights it.
+- Checkboxes remain for multi-select lists only; use `density="compact"`.
 
 ### Section Spacing
 
 - Between form fields: `mb-4`
-- Above button groups: `mt-4`
-- Between buttons: `mr-2` on the first
-- Between chips: `mr-2 mb-2` on each
+- Between major sections: `mb-4` on the upper block (prefer over `mt-*`)
+- Control clusters: buttons/chips `style="gap: 8px"`; **switch rows** use class `switch-cluster` (16px gap)
+- Side-by-side fields: class `field-row`
+- Simple two-button pairs: `mr-2` on the first **or** parent `gap: 8px`
 
 ### Feedback and Confirmations
 
 **Never use `alert()` or `confirm()`.**
 
-- **Success/error**: `v-alert` on the parent page, `density="compact"`, `class="mb-4"`
-- **Confirmations**: StandardDialog with Cancel and the primary action
+- **Success/error**: `v-alert` on the parent page, `density="compact"`, `class="mb-4"`, **above** the
+  content it describes. Drive them from `useFeedback()`, which makes success transient and
+  mutually exclusive with error — a success banner that nothing resets will sit there
+  contradicting the next failure.
+- **Confirmations**: `ConfirmDeleteDialog` for deletes; StandardDialog with Cancel + primary
+  for anything else. An error inside a confirm dialog goes above the question, like every
+  other alert.
 
 ```vue
 <v-alert v-if="error" type="error" density="compact" class="mb-4">{{ error }}</v-alert>
 
-<StandardDialog v-model="showConfirm" title="Delete screen?" max-width="400" @close="screenToDelete = null">
-  <p>Are you sure?</p>
-  <template #actions>
-    <v-spacer />
-    <v-btn variant="text" class="mr-2" @click="showConfirm = false">Cancel</v-btn>
-    <v-btn color="error" variant="elevated" @click="doDelete">Delete</v-btn>
-  </template>
-</StandardDialog>
+<ConfirmDeleteDialog
+  v-model="showConfirm"
+  title="Delete screen?"
+  :name="screenToDelete?.name"
+  :error="deleteError"
+  :loading="deleting"
+  @close="screenToDelete = null"
+  @confirm="doDelete"
+/>
 ```
+
+#### Dialog primary-action verb
+
+The primary button names the outcome: **Create** in a create dialog, **Save** when editing an
+existing record, **Delete** in a confirm-delete. Do not label a create action `Save`.
 
 ### Links
 
@@ -166,7 +265,7 @@ These are specific to this application and have their own conventions.
 ### Layout Picker
 
 - Renders each layout from the **normalised geometry returned by `GET /api/v1/layouts`** — never from hand-drawn CSS. If the picker and the engine ever disagree about what `1+5` means, that is a bug the shared geometry exists to prevent.
-- Group options by family (Equal, Hotspot, Vertical, Panoramic) with a `v-item-group`.
+- Group options by family. The family list is **derived from the API response**, not hard-coded, so a family added server-side cannot silently hide its layouts. `full` (Full bleed) is the only single-cell layout — the old `1x1` was retired as a geometric duplicate.
 - The selected layout gets a primary-coloured border, not a background fill; a fill fights the cell diagram.
 
 ### Tile Editor
@@ -179,8 +278,13 @@ These are specific to this application and have their own conventions.
 ### Preview Canvas
 
 - Renders in the output's aspect ratio with letterboxing, on a black surface.
-- Shows a `v-progress-circular` while the first frame is loading, and an explicit notice if the display engine is not running.
+- Shows an explicit notice when the display engine is not running.
 - Never stretch the preview to fill its container. A distorted preview of a wall is worse than a small accurate one.
+
+The engine is not implemented yet, so today the canvas renders the scheduler's layout
+geometry and per-tile source names rather than video. When the MJPEG stream lands it should
+show a `v-progress-circular` until the first frame arrives; until then, do not add a spinner
+for a stream that never starts.
 
 ### Status Chips
 
@@ -194,12 +298,12 @@ Decoder and source state use consistent colours everywhere they appear:
 | Offline or failed | `error` | `Offline` |
 | Disabled | `grey` | `Disabled` |
 
-Software decode is `warning` rather than `success` deliberately: on a Pi 5 it is the difference between a wall that works and one that does not, and it should be visible at a glance.
+Software decode is `warning` rather than `success` deliberately: on constrained hosts it is often the difference between a wall that works and one that does not, and it should be visible at a glance.
 
 ## Mobile Responsiveness
 
 - **Breakpoints**: 0–599 (xs), 600 (sm), 960 (md), 1280 (lg)
-- Prefer `pa-3 pa-sm-6` over fixed `pa-6`
+- Prefer `pa-3 pa-sm-4` over fixed `pa-6` when adding padding outside StandardCard
 - Use `useDisplay()` for programmatic breakpoint checks
 - Minimum 44px touch targets
 - The tile editor collapses to a vertical cell list below `sm`; a nine-cell diagram is not usable on a phone
@@ -214,13 +318,18 @@ Software decode is `warning` rather than `success` deliberately: on a Pi 5 it is
 - **Use text fields without an explicit `autocomplete` attribute**
 - **Place Add/Create buttons below tables or lists** — they belong in the section header, right-aligned
 - **Use raw `v-dialog`** — use StandardDialog
-- **Use `gap` or `gap-*`** — use explicit margins (`mr-2`, `mb-2`)
-- **Place adjacent buttons without spacing** — `mr-2` on the first
+- **Use elevated / non-`flat` expansion panels** inside StandardCard
+- **Place adjacent buttons/switches without spacing** — use `style="gap: 8px"` or `mr-2`
+- **Use `v-row`/`v-col`** anywhere — use `field-row`, `page-narrow`, or plain flex + `gap`
+- **Rely on Vuetify `ga-*` utilities** for critical layout — use inline `style="gap: …"`
 - **Use `alert()` or `confirm()`**
 - **Hard-code layout geometry in the frontend** — always use the API's normalised rects
 - **Poll for display state** — use the SSE stream
+- **Use a raw `type="password"` field** — use `PasswordField` with show/hide
 - Use raw HTML for forms, buttons, inputs, or cards — always Vuetify components
 - Put form action buttons in the page header
 - Use `hide-details` without `="auto"`
+- **Set a success message that nothing clears** — use `useFeedback()`
+- **Re-implement an empty state or a delete confirmation** — use `EmptyState` / `ConfirmDeleteDialog`
 - Use decorative or custom fonts
 - Use unstyled blue links

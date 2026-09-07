@@ -18,8 +18,6 @@
       density="compact"
       hide-details="auto"
       autocomplete="off"
-      class="mb-4"
-      style="max-width: 320px;"
     />
     <template #actions>
       <v-spacer />

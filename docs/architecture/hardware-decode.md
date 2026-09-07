@@ -1,19 +1,25 @@
-# Hardware Decode on the Raspberry Pi
+# Hardware Decode
 
 > **Status:** Design and research notes. Not yet implemented.
 
-Hardware video decode on the Raspberry Pi is the single most constraint-laden part of this project, and the constraints changed significantly between the Pi 4 and the Pi 5. This document records what is actually true, so that capacity expectations and the fallback design are grounded rather than optimistic.
+livestream-viewer is platform-agnostic: it probes the host at startup and reports what each codec can do. **This document is the optimisation and capacity-planning guide for constrained Linux hosts**, with Raspberry Pi 4/5 as the primary worked example because their V4L2 surface is unusually sharp-edged. Other SBCs and desktop GPUs follow the same probe → report → fall back pattern; only the device nodes and hwaccel names change.
 
-## The Headline Facts
+## Why this matters on low-cost hardware
+
+On a workstation with VA-API or VideoToolbox, a 3×3 grid of 1080p H.264 is rarely a crisis. On a Raspberry Pi, Rockchip board, or similar ARM SBC, decode is often the binding constraint. The application must never silently fall back to software decode and drop frames — it probes, records, and surfaces capacity so the UI can warn before the wall is built.
+
+## Raspberry Pi — headline facts
+
+The Pi is the most constraint-laden optimisation target today, and the constraints changed significantly between the Pi 4 and the Pi 5:
 
 1. **The Raspberry Pi 5 has no H.264 hardware decoder.** The block was removed from BCM2712. Only HEVC remains.
 2. **H.264 is what most real sources use** — YouTube, most IP cameras, most web streams. So on a Pi 5, the common case is software decode.
 3. **Upstream FFmpeg cannot produce zero-copy DMA-BUF frames from V4L2 on the Pi.** That requires an out-of-tree fork, and upstreaming is considered unlikely by the people closest to it.
 4. **The Pi's decoder does not emit linear NV12.** It emits Broadcom SAND, a tiled format that must be detiled or handled with DRM format modifiers.
 
-None of these is fatal. All of them need to be in the design rather than discovered during a demo.
+None of these is fatal. All of them need to be in the design rather than discovered during a demo. Other embedded platforms have their own equivalents (Rockchip MPP, Allwinner Cedar, AMD/Intel VA-API quirks); the Pi notes below are the template for documenting those as they are validated.
 
-## Per-Model Capability
+## Per-model capability (Raspberry Pi)
 
 | | Pi 4 (BCM2711) | Pi 5 (BCM2712) |
 |---|---|---|
@@ -27,16 +33,16 @@ Raspberry Pi engineers defend the removal on the grounds that the A76 cores deco
 
 For a single stream that is fine. For a 3×3 grid of 1080p H.264 cameras it is not, and the UI needs to say so before the user builds it.
 
-**Practical guidance we surface to users:** if you control the encoder, use HEVC. It is the only codec with hardware decode on the Pi 5 and it works on the Pi 4 as well.
+**Practical guidance we surface to users on Pi hardware:** if you control the encoder, use HEVC. It is the only codec with hardware decode on the Pi 5 and it works on the Pi 4 as well.
 
-## The Two Kernel APIs
+## The Two Kernel APIs (V4L2 on Linux SBCs)
 
-This is the most common source of confusion in Pi video work, and it produces a specific recurring bug report.
+This is the most common source of confusion in Pi video work, and it produces a specific recurring bug report. Similar stateful/stateless splits appear on other V4L2 platforms.
 
 - **Stateful V4L2 M2M** — The decoder maintains bitstream state. FFmpeg talks to this with the `h264_v4l2m2m` decoder. Pi 4 H.264 only.
 - **Stateless V4L2 request API** — The kernel driver is given per-frame controls and reference lists; the client maintains state. Used by `rpivid` for HEVC on both models. FFmpeg reaches this through the `drm` hwaccel, not through a `*_v4l2m2m` decoder.
 
-**`hevc_v4l2m2m` cannot work.** A Raspberry Pi engineer states directly that "there is NOT a simple mapping between the two" ([forum](https://forums.raspberrypi.com/viewtopic.php?start=25&t=283301)). A large fraction of "hardware decode is using 200% CPU" bug reports across projects are exactly this mistake.
+**`hevc_v4l2m2m` cannot work on the Pi.** A Raspberry Pi engineer states directly that "there is NOT a simple mapping between the two" ([forum](https://forums.raspberrypi.com/viewtopic.php?start=25&t=283301)). A large fraction of "hardware decode is using 200% CPU" bug reports across projects are exactly this mistake.
 
 Correct invocation for HEVC on a Pi 5 is:
 

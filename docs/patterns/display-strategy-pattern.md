@@ -1,6 +1,6 @@
 # Display Strategy Pattern
 
-> **Status:** Design. Not yet implemented.
+> **Status:** Implemented for persistence, REST, Vue editors, and the headless scheduler. SDL compositing of the snapshot is not implemented yet.
 
 The display strategy is the user-facing configuration model: what is shown, where, and for how long. This document defines the model precisely, because it is the shared contract between the database schema, the REST API, the display engine, and the Settings UI.
 
@@ -45,10 +45,16 @@ Grouped the way VMS products group them, so the picker is familiar:
 
 | Family | Layouts |
 |--------|---------|
-| **Equal** | `1x1`, `2x2`, `3x3`, `4x4`, `2x1`, `1x2` |
+| **Full bleed** | `full` |
+| **Equal** | `2x1`, `1x2`, `2x2`, `3x3`, `4x4` |
 | **Hotspot** (1+N) | `1+3`, `1+5`, `1+7`, `1+12` |
 | **Vertical** | `3v`, `1v+6` |
 | **Panoramic** | `2p`, `1p+6` |
+
+`full` is the only single-cell layout. An earlier `1x1` in the Equal family had identical
+geometry; keeping both meant two ways to express the same wall and two code paths that had
+to agree. It was retired, and `database.migrateRetiredLayouts` rewrites existing screens to
+`full` on startup.
 
 Cell index 0 is always the primary or hotspot tile where the layout has one. When switching between hotspot layouts, the source assigned to cell 0 is preserved — this is standard VMS behaviour and users expect it.
 
@@ -203,9 +209,10 @@ All timers are wall-clock, not frame-counted, so dropped frames do not slow the 
 Enforced by the API, not just the UI:
 
 - A tile's `index` must be within the layout's cell count.
-- A source referenced by any tile, sequence, or playlist item must exist and be enabled.
+- A source referenced by any tile, sequence, or playlist item must **exist**. Sources may be disabled while still referenced; the scheduler treats those tiles as empty/offline until re-enabled.
 - Deleting a source that is referenced is refused; the response lists the referencing screens so the UI can offer to clear them.
-- A transition screen needs at least one item; a tour needs at least one entry.
+- Layout IDs must refer to entries in the layout catalogue. Transition screens use the dedicated `full` (full-bleed) layout for Preview geometry when they have no grid layout of their own.
+- A transition screen needs at least one item; an enabled tour needs at least one entry.
 - `duration_ms` must be zero for `cut` and greater than zero otherwise.
 - A `subtype` must be valid for its `type`.
 - Dwell times have a sane floor (one second) to prevent a configuration that thrashes the decoders.

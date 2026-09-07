@@ -42,8 +42,8 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, "bad_request", "username is required", nil)
 		return
 	}
-	if len(req.Password) < 8 {
-		WriteError(w, http.StatusBadRequest, "bad_request", "password must be at least 8 characters", nil)
+	if len(req.Password) < model.MinPasswordLength {
+		WriteError(w, http.StatusBadRequest, "bad_request", shortPasswordMessage, nil)
 		return
 	}
 	role := req.Role

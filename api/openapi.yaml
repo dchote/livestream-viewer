@@ -50,6 +50,17 @@ paths:
           content:
             application/x-yaml:
               schema: { type: string }
+  /docs:
+    get:
+      tags: [system]
+      security: []
+      summary: Swagger UI for this specification
+      responses:
+        "200":
+          description: HTML page
+          content:
+            text/html:
+              schema: { type: string }
   /api/v1/auth/status:
     get:
       tags: [auth]
@@ -89,8 +100,12 @@ paths:
                 properties:
                   token: { type: string }
                   user: { $ref: "#/components/schemas/User" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
   /api/v1/auth/me:
     get:
       tags: [auth]
@@ -102,7 +117,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
         "401":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/auth/change-password:
     post:
       tags: [auth]
@@ -125,11 +140,16 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
         "400":
-          $ref: "#/components/responses/Error"
+          description: |
+            Malformed body, wrong current password, or a new password shorter
+            than 8 characters. Note this is a 400, not a 403 — the 403
+            `password_change_required` is raised by *other* endpoints while a
+            change is pending.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "401":
-          $ref: "#/components/responses/Error"
-        "403":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/users:
     get:
       tags: [users]
@@ -147,9 +167,9 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/User" }
         "401":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Forbidden"
     post:
       tags: [users]
       summary: Create a management user
@@ -172,11 +192,14 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
         "400":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/BadRequest"
         "403":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Forbidden"
         "409":
-          $ref: "#/components/responses/Error"
+          description: Username already exists
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/users/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -197,11 +220,11 @@ paths:
         "204":
           description: Role updated
         "400":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/BadRequest"
         "403":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/NotFound"
     delete:
       tags: [users]
       summary: Delete a management user
@@ -210,11 +233,11 @@ paths:
         "204":
           description: Deleted
         "400":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/BadRequest"
         "403":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/Forbidden"
         "404":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/NotFound"
   /api/v1/system/info:
     get:
       tags: [system]
@@ -234,6 +257,7 @@ paths:
                   display_running: { type: boolean }
                   display_enabled: { type: boolean }
                   yt_dlp: { type: boolean }
+                  ffprobe: { type: boolean }
                   capabilities: { type: object }
                   displays: { type: array, items: { type: object } }
   /api/v1/layouts:
@@ -282,16 +306,26 @@ paths:
     patch:
       tags: [config]
       summary: Update runtime configuration
+      description: |
+        Admin only. A sparse patch: only the keys present in the body are
+        applied, and `id` is ignored. Saving reloads the display strategy.
       requestBody:
+        required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/RuntimeConfig" }
+            schema: { $ref: "#/components/schemas/RuntimeConfigPatch" }
       responses:
         "200":
           description: Updated
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RuntimeConfig" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
   /api/v1/sources:
     get:
       tags: [sources]
@@ -310,11 +344,21 @@ paths:
     post:
       tags: [sources]
       summary: Create a source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceWrite" }
       responses:
         "201":
           description: Created
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/sources/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -324,16 +368,32 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/NotFound"
     patch:
       tags: [sources]
       summary: Update a source
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceWrite" }
       responses:
         "200":
           description: Updated
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     delete:
       tags: [sources]
       summary: Delete a source
@@ -341,10 +401,14 @@ paths:
       responses:
         "204":
           description: Deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Error"
-        "501":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/SourceInUse"
   /api/v1/sources/{id}/probe:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -354,22 +418,45 @@ paths:
       responses:
         "200":
           description: Probe result
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Source" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/sources/{id}/thumbnail:
     parameters:
       - $ref: "#/components/parameters/ID"
     get:
       tags: [sources]
       summary: Cached still for the UI
+      description: |
+        Returns a JPEG under `{data.dir}/thumbnails/{id}.jpg` when present.
+        Thumbnail extraction is deferred until media ingest; without a file this
+        endpoint returns 404.
+
+        Because browsers cannot set an `Authorization` header on `<img src>`,
+        this endpoint also accepts the JWT in the `access_token` query
+        parameter. Prefer the header wherever the caller controls it.
+      parameters:
+        - name: access_token
+          in: query
+          required: false
+          description: JWT, as an alternative to the `Authorization` header.
+          schema: { type: string }
       responses:
         "200":
           description: JPEG
           content:
             image/jpeg:
               schema: { type: string, format: binary }
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/NotFound"
   /api/v1/uploads:
     get:
       tags: [uploads]
@@ -388,11 +475,35 @@ paths:
     post:
       tags: [uploads]
       summary: Upload a media file
+      description: |
+        Maximum upload size is 512 MiB. Allowed MIME types are common video formats
+        (for example video/mp4, video/webm, video/quicktime).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
       responses:
         "201":
           description: Created
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Upload" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: File too large
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/v1/uploads/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -402,8 +513,14 @@ paths:
       responses:
         "204":
           description: Deleted
-        "501":
-          $ref: "#/components/responses/Error"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/UploadInUse"
   /api/v1/screens:
     get:
       tags: [screens]
@@ -422,11 +539,24 @@ paths:
     post:
       tags: [screens]
       summary: Create a screen
+      description: Admin only. Grid screens default to the `full` layout when `layout` is omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreenWrite" }
       responses:
         "201":
           description: Created
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Screen" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
   /api/v1/screens/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -436,24 +566,51 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Screen" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/NotFound"
     patch:
       tags: [screens]
       summary: Update a screen
+      description: |
+        Admin only. A sparse patch: `tiles` and `items` are replaced wholesale
+        when present and left untouched when omitted. Changing `layout` remaps
+        existing tiles onto the new cell count.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScreenWrite" }
       responses:
         "200":
           description: Updated
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Screen" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     delete:
       tags: [screens]
       summary: Delete a screen
       responses:
         "204":
           description: Deleted
-        "501":
-          $ref: "#/components/responses/Error"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ScreenInUse"
   /api/v1/tour:
     get:
       tags: [tour]
@@ -467,11 +624,36 @@ paths:
     put:
       tags: [tour]
       summary: Replace the screen tour
+      description: |
+        Admin only. Full replacement of the tour document. The `entries` array
+        is required (use `[]` to clear a disabled tour); omitting it is a 400.
+        Entry `position` is assigned from array order, so any value sent is
+        ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                enabled: { type: boolean }
+                loop: { type: boolean }
+                entries:
+                  type: array
+                  items: { $ref: "#/components/schemas/TourEntry" }
       responses:
         "200":
           description: Updated
-        "501":
-          $ref: "#/components/responses/Error"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tour" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
   /api/v1/display/state:
     get:
       tags: [display]
@@ -489,8 +671,10 @@ paths:
       responses:
         "204":
           description: Advanced
-        "501":
-          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/display/previous:
     post:
       tags: [display]
@@ -498,8 +682,10 @@ paths:
       responses:
         "204":
           description: Stepped
-        "501":
-          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/display/goto/{screenId}:
     post:
       tags: [display]
@@ -512,8 +698,14 @@ paths:
       responses:
         "204":
           description: Pinned
-        "501":
-          $ref: "#/components/responses/Error"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/display/pause:
     post:
       tags: [display]
@@ -521,8 +713,10 @@ paths:
       responses:
         "204":
           description: Paused
-        "501":
-          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/display/resume:
     post:
       tags: [display]
@@ -530,8 +724,10 @@ paths:
       responses:
         "204":
           description: Resumed
-        "501":
-          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/preview/stream:
     get:
       tags: [preview]
@@ -540,7 +736,7 @@ paths:
         "200":
           description: multipart MJPEG
         "503":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/EngineNotRunning"
   /api/v1/preview/frame:
     get:
       tags: [preview]
@@ -552,17 +748,31 @@ paths:
             image/jpeg:
               schema: { type: string, format: binary }
         "503":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/EngineNotRunning"
   /api/v1/events:
     get:
       tags: [display]
       summary: Server-Sent Events for display and decoder state
+      description: |
+        Streams `event: display.state` with a JSON `DisplayState` payload whenever
+        scheduler state changes (plus comment keepalives). EventSource clients that
+        cannot set an Authorization header may pass `?access_token=<jwt>`.
+      parameters:
+        - name: access_token
+          in: query
+          required: false
+          schema: { type: string }
+          description: JWT for EventSource clients (alternative to Authorization header)
       responses:
         "200":
-          description: SSE stream
+          description: SSE stream (`text/event-stream`)
           content:
             text/event-stream:
               schema: { type: string }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
 components:
   securitySchemes:
     bearerAuth:
@@ -581,6 +791,60 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Malformed body, invalid path id, or failed validation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Authenticated but not an administrator, or a password change is pending
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServerError:
+      description: Database or I/O failure
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    SourceInUse:
+      description: |
+        Source is referenced by one or more screens. `details.screens` lists
+        them so the UI can offer to clear the references.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SourceConflict" }
+    ScreenInUse:
+      description: |
+        Screen is referenced by the tour. `details.tour_entries` lists the
+        entries so the UI can point at what to remove first.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ScreenConflict" }
+    UploadInUse:
+      description: |
+        Upload is referenced by one or more sources. `details.sources` lists
+        them.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadConflict" }
+    EngineNotRunning:
+      description: |
+        The display engine is not running, so there is no composited output to
+        serve. Error code is `engine_not_running`. Clients should fall back to
+        the layout diagram built from `GET /api/v1/layouts`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
   schemas:
     Error:
       type: object
@@ -589,6 +853,50 @@ components:
         error: { type: string }
         message: { type: string }
         details: {}
+    EntityRef:
+      type: object
+      description: Minimal reference to a resource that blocks a delete.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+    SourceConflict:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            details:
+              type: object
+              properties:
+                screens:
+                  type: array
+                  items: { $ref: "#/components/schemas/EntityRef" }
+    ScreenConflict:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            details:
+              type: object
+              properties:
+                tour_entries:
+                  type: array
+                  items: { $ref: "#/components/schemas/TourEntry" }
+    UploadConflict:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            details:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items: { $ref: "#/components/schemas/EntityRef" }
+    Timestamps:
+      type: object
+      properties:
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     User:
       type: object
       properties:
@@ -598,10 +906,20 @@ components:
         must_change_password: { type: boolean }
     Layout:
       type: object
+      description: |
+        Normalised cell geometry in the unit square. This is the single source
+        of truth shared by the display engine and the frontend layout picker.
       properties:
-        id: { type: string }
+        id:
+          type: string
+          description: |
+            Catalogue id, e.g. `full`, `2x2`, `1+5`. `full` is the only
+            single-cell layout; the former `1x1` was retired as a duplicate and
+            existing screens are migrated to `full` on startup.
         name: { type: string }
-        family: { type: string, enum: [equal, hotspot, vertical, panoramic] }
+        family:
+          type: string
+          enum: [full_bleed, equal, hotspot, vertical, panoramic]
         cells: { type: integer }
         rects:
           type: array
@@ -639,6 +957,23 @@ components:
         duration_ms: { type: integer }
         easing: { type: string }
         color: { type: string, nullable: true }
+    RuntimeConfigPatch:
+      type: object
+      description: Sparse update; omitted keys keep their stored value.
+      properties:
+        output_width: { type: integer }
+        output_height: { type: integer }
+        output_rotation: { type: integer }
+        default_dwell_ms: { type: integer }
+        default_transition: { $ref: "#/components/schemas/Transition" }
+        allow_software_fallback: { type: boolean }
+        max_hw_decoders: { type: integer }
+        reconnect_backoff_ms: { type: integer }
+        offline_grace_ms: { type: integer }
+        preview_fps: { type: integer }
+        preview_width: { type: integer }
+        placeholder_color: { type: string }
+        gutter_px: { type: integer }
     RuntimeConfig:
       type: object
       properties:
@@ -647,7 +982,7 @@ components:
         output_height: { type: integer }
         output_rotation: { type: integer }
         default_dwell_ms: { type: integer }
-        default_transition: { type: string }
+        default_transition: { $ref: "#/components/schemas/Transition" }
         allow_software_fallback: { type: boolean }
         max_hw_decoders: { type: integer }
         reconnect_backoff_ms: { type: integer }
@@ -657,26 +992,69 @@ components:
         placeholder_color: { type: string }
         gutter_px: { type: integer }
     Source:
+      allOf:
+        - $ref: "#/components/schemas/Timestamps"
+        - type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            kind:
+              type: string
+              enum: [youtube, rtsp, hls, dash, http, srt, rtmp, file]
+            url: { type: string }
+            username: { type: string }
+            has_password: { type: boolean }
+            enabled: { type: boolean }
+            options: { $ref: "#/components/schemas/SourceOptions" }
+            probe: { $ref: "#/components/schemas/ProbeResult" }
+    SourceWrite:
       type: object
       properties:
-        id: { type: integer }
         name: { type: string }
         kind:
           type: string
           enum: [youtube, rtsp, hls, dash, http, srt, rtmp, file]
         url: { type: string }
         username: { type: string }
+        password: { type: string, format: password }
         enabled: { type: boolean }
-        options: { type: string }
-        probe: { type: string }
-    Screen:
+        options: { $ref: "#/components/schemas/SourceOptions" }
+    SourceOptions:
       type: object
       properties:
-        id: { type: integer }
+        transport: { type: string, enum: [tcp, udp] }
+        loop: { type: boolean }
+        upload_id: { type: integer }
+    ProbeResult:
+      type: object
+      properties:
+        status: { type: string, enum: [ok, unavailable, error] }
+        message: { type: string }
+        codec: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        fps: { type: number }
+        hw_decode: { type: boolean, nullable: true }
+        probed_at: { type: string, format: date-time }
+    Screen:
+      allOf:
+        - $ref: "#/components/schemas/Timestamps"
+        - $ref: "#/components/schemas/ScreenWrite"
+        - type: object
+          properties:
+            id: { type: integer }
+    ScreenWrite:
+      type: object
+      description: |
+        Accepted body for screen create and update. Server-owned fields (`id`,
+        timestamps) are ignored if sent. On create, `layout` defaults to `full`
+        for grid screens.
+      properties:
         name: { type: string }
         kind: { type: string, enum: [grid, transition] }
         layout: { type: string }
         loop: { type: boolean }
+        transition: { $ref: "#/components/schemas/Transition" }
         tiles:
           type: array
           items: { $ref: "#/components/schemas/Tile" }
@@ -687,13 +1065,26 @@ components:
       type: object
       properties:
         id: { type: integer }
+        screen_id: { type: integer }
         index: { type: integer }
         source_id: { type: integer, nullable: true }
         fit: { type: string, enum: [contain, cover, fill] }
+        sequence:
+          type: array
+          items: { $ref: "#/components/schemas/TileSequenceItem" }
+    TileSequenceItem:
+      type: object
+      properties:
+        id: { type: integer }
+        tile_id: { type: integer }
+        position: { type: integer }
+        source_id: { type: integer }
+        dwell_ms: { type: integer }
     PlaylistItem:
       type: object
       properties:
         id: { type: integer }
+        screen_id: { type: integer }
         position: { type: integer }
         source_id: { type: integer }
         dwell_ms: { type: integer }
@@ -711,28 +1102,53 @@ components:
       type: object
       properties:
         id: { type: integer }
+        tour_id: { type: integer }
         position: { type: integer }
         screen_id: { type: integer }
         dwell_ms: { type: integer }
-        transition: { type: string }
+        transition: { $ref: "#/components/schemas/Transition" }
     Upload:
-      type: object
-      properties:
-        id: { type: integer }
-        name: { type: string }
-        path: { type: string }
-        size: { type: integer }
-        mime_type: { type: string }
+      allOf:
+        - $ref: "#/components/schemas/Timestamps"
+        - type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            path: { type: string }
+            size: { type: integer }
+            mime_type: { type: string }
     DisplayState:
       type: object
+      description: |
+        Scheduler snapshot. When the scheduler is not attached (headless
+        development), only `display_running`, `display_enabled`, `paused` and
+        `tiles` are guaranteed to be present.
       properties:
+        at: { type: string, format: date-time }
         display_running: { type: boolean }
+        display_enabled: { type: boolean }
         paused: { type: boolean }
         pinned: { type: boolean }
         active_screen: { type: integer, nullable: true }
+        active_screen_name: { type: string }
         next_screen: { type: integer, nullable: true }
         dwell_remaining_ms: { type: integer }
         fps: { type: number }
+        transition:
+          type: object
+          nullable: true
+          properties:
+            type: { type: string }
+            subtype: { type: string }
+            progress: { type: number }
         tiles:
           type: array
-          items: { type: object }
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              source_id: { type: integer, nullable: true }
+              source_name: { type: string }
+              fit: { type: string }
+              decoder: { type: string }
+              sequence_index: { type: integer }
