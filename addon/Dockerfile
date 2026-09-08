@@ -31,10 +31,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev libdrm-dev libva-dev libv4l-dev libsrt-openssl-dev \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /tmp
+# Bookworm ships OpenSSL 3 (Apache-2.0). FFmpeg will not enable openssl under GPLv2.
 RUN curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" | tar xJ \
   && cd "ffmpeg-${FFMPEG_VERSION}" \
   && ./configure --prefix=/opt/ffmpeg-8 --enable-shared --disable-static \
-       --disable-doc --disable-debug --enable-gpl --enable-openssl \
+       --disable-doc --disable-debug --enable-gpl --enable-version3 \
+       --enable-openssl \
        --enable-libdrm --enable-vaapi --enable-libv4l2 --enable-libsrt \
   && make -j"$(nproc)" \
   && make install
