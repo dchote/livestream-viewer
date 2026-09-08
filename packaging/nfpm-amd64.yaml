@@ -48,6 +48,8 @@ depends:
   - libxi6
   - libxrandr2
   - libxfixes3
+  - libxss1
+  - libxtst6
   - libwayland-client0
   - libxkbcommon0
   - libva2

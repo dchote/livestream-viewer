@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl cmake ninja-build build-essential pkg-config \
     libdrm-dev libgbm-dev libegl-dev libgles-dev libgl-dev \
     libx11-dev libxext-dev libxcursor-dev libxi-dev libxrandr-dev libxfixes-dev \
+    libxss-dev libxtst-dev \
     libwayland-dev wayland-protocols libxkbcommon-dev \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /tmp
@@ -119,6 +120,7 @@ RUN apt-get update \
        libssl3 \
        libdrm2 libgbm1 libegl1 libgles2 libgl1 \
        libx11-6 libxext6 libxcursor1 libxi6 libxrandr2 libxfixes3 \
+       libxss1 libxtst6 \
        libwayland-client0 libxkbcommon0 \
        libva2 libva-drm2 libv4l-0 \
        libsrt1.5-openssl \
