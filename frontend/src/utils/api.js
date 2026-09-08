@@ -103,12 +103,12 @@ export const api = {
   patch: (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
   // XHR rather than fetch: upload progress events have no fetch equivalent.
-  upload(path, file, onProgress) {
+  upload(path, file, onProgress, method = 'POST') {
     return new Promise((resolve, reject) => {
       const form = new FormData()
       form.append('file', file)
       const xhr = new XMLHttpRequest()
-      xhr.open('POST', apiURL(path))
+      xhr.open(method || 'POST', apiURL(path))
       xhr.setRequestHeader('Accept', 'application/json')
       const token = getToken()
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)

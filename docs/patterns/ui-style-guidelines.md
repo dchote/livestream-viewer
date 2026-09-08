@@ -277,14 +277,17 @@ These are specific to this application and have their own conventions.
 
 ### Preview Canvas
 
+- Fills the content column (no pixel max-width). Height follows the configured output aspect ratio.
 - Renders in the output's aspect ratio with letterboxing, on a black surface.
 - Shows an explicit notice when the display engine is not running.
-- Never stretch the preview to fill its container. A distorted preview of a wall is worse than a small accurate one.
+- Never distort the preview to fill height independently of width. A stretched wall is worse than a correctly proportioned one.
 
-The engine is not implemented yet, so today the canvas renders the scheduler's layout
-geometry and per-tile source names rather than video. When the MJPEG stream lands it should
-show a `v-progress-circular` until the first frame arrives; until then, do not add a spinner
-for a stream that never starts.
+The canvas shows the MJPEG stream when the engine is running, and falls back to the
+scheduler's layout geometry with per-tile source names when it is not. Show a
+`v-progress-circular` only while a stream that will start is connecting; when
+`/api/v1/preview/stream` returns `engine_not_running`, switch to the layout diagram rather
+than spinning forever. The endpoint serves at most four viewers and answers 429 with
+`too_many_clients` beyond that, which the UI should surface as a message, not a retry loop.
 
 ### Status Chips
 

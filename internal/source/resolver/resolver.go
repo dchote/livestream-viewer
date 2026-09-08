@@ -1,16 +1,22 @@
 package resolver
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/dchote/livestream-viewer/internal/source/youtube"
 )
 
 const defaultTimeout = 25 * time.Second
+
+// youtubeFormat prefers a single HLS video URL. YouTube live streams no longer
+// publish muxed (audio+video) formats, so `best` fails with "Requested format
+// is not available". The wall is video-only, so video-only HLS is the right
+// pick; muxed HLS and non-HLS remain as fallbacks for VOD.
+const youtubeFormat = "bv*[protocol*=m3u8]/b[protocol*=m3u8]/bv*/b"
 
 // LookPathFunc locates an executable on PATH.
 type LookPathFunc func(file string) (string, error)
@@ -18,10 +24,15 @@ type LookPathFunc func(file string) (string, error)
 // CommandFunc starts a subprocess.
 type CommandFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// Tools discovers optional binaries.
+// Tools discovers optional binaries and the optional YouTube session files.
 type Tools struct {
-	LookPath LookPathFunc
-	Command  CommandFunc
+	LookPath           LookPathFunc
+	Command            CommandFunc
+	CookiesFile        string // Netscape jar; omitted from argv when missing
+	CookiesFromBrowser string // yt-dlp --cookies-from-browser value; ignored when CookiesFile exists
+	POTokenFile        string
+	POTBaseURL         string // BgUtils provider; omitted from extractor-args when empty or the default
+	PluginDir          string // bgutil yt-dlp plugin; omitted when empty or POT is off
 }
 
 func (t Tools) lookPath(file string) (string, error) {
@@ -29,24 +40,6 @@ func (t Tools) lookPath(file string) (string, error) {
 		return t.LookPath(file)
 	}
 	return exec.LookPath(file)
-}
-
-func (t Tools) command(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if t.Command != nil {
-		return t.Command(ctx, name, args...)
-	}
-	cmd := exec.CommandContext(ctx, name, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return stdout.Bytes(), fmt.Errorf("%s", msg)
-	}
-	return stdout.Bytes(), nil
 }
 
 // Available reports which optional tools are on PATH.
@@ -60,18 +53,25 @@ func (t Tools) Available() (ytDlp, ffprobe, ffmpeg bool) {
 	return
 }
 
-// ResolveYouTube returns a playable HLS manifest URL. The result must not be persisted.
+// withTimeout always bounds a subprocess. Decode workers pass their own
+// cancellation context, which has no deadline: without this a hung yt-dlp or
+// ffprobe would wedge the calling worker for the life of the process.
+func withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, defaultTimeout)
+}
+
+// ResolveYouTube returns a playable video HLS URL. The result must not be persisted.
 func (t Tools) ResolveYouTube(ctx context.Context, pageURL string) (string, error) {
 	bin, err := t.lookPath("yt-dlp")
 	if err != nil {
 		return "", fmt.Errorf("yt-dlp is not installed")
 	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), defaultTimeout)
-		defer cancel()
-	}
-	out, err := t.command(ctx, bin, "-g", "--no-warnings", "-f", "best[protocol*=m3u8]", pageURL)
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	out, err := t.command(ctx, bin, t.youtubeArgs(pageURL)...)
 	if err != nil {
 		return "", fmt.Errorf("yt-dlp: %w", err)
 	}
@@ -85,58 +85,21 @@ func (t Tools) ResolveYouTube(ctx context.Context, pageURL string) (string, erro
 	return line, nil
 }
 
-type ffprobeStreams struct {
-	Streams []struct {
-		CodecName string `json:"codec_name"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-		FrameRate string `json:"r_frame_rate"`
-		AvgRate   string `json:"avg_frame_rate"`
-	} `json:"streams"`
-}
-
-// ProbeOpenURL runs ffprobe against a libav-openable URL.
-func (t Tools) ProbeOpenURL(ctx context.Context, openURL string) (codec string, width, height int, fps float64, err error) {
-	bin, err := t.lookPath("ffprobe")
-	if err != nil {
-		return "", 0, 0, 0, fmt.Errorf("ffprobe is not installed")
+func (t Tools) youtubeArgs(pageURL string) []string {
+	args := []string{"-g", "--no-warnings"}
+	if t.PluginDir != "" && strings.TrimSpace(t.POTBaseURL) != "" {
+		args = append(args, "--plugin-dirs", t.PluginDir, "--plugin-dirs", "default")
 	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), defaultTimeout)
-		defer cancel()
+	if youtube.CookiesConfigured(t.CookiesFile) {
+		args = append(args, "--cookies", t.CookiesFile)
+	} else if b := strings.TrimSpace(t.CookiesFromBrowser); b != "" {
+		args = append(args, "--cookies-from-browser", b)
 	}
-	out, err := t.command(ctx, bin, "-v", "quiet", "-print_format", "json", "-show_streams", "-select_streams", "v:0", openURL)
-	if err != nil {
-		return "", 0, 0, 0, fmt.Errorf("ffprobe: %w", err)
+	if tok := youtube.ReadPOTokenFile(t.POTokenFile); tok != "" {
+		args = append(args, "--extractor-args", "youtube:po_token="+tok)
 	}
-	var parsed ffprobeStreams
-	if err := json.Unmarshal(out, &parsed); err != nil {
-		return "", 0, 0, 0, fmt.Errorf("ffprobe json: %w", err)
+	if u := strings.TrimRight(strings.TrimSpace(t.POTBaseURL), "/"); u != "" && u != "http://127.0.0.1:4416" {
+		args = append(args, "--extractor-args", "youtubepot-bgutilhttp:base_url="+u)
 	}
-	if len(parsed.Streams) == 0 {
-		return "", 0, 0, 0, fmt.Errorf("no video stream")
-	}
-	st := parsed.Streams[0]
-	fps = parseFrameRate(st.FrameRate)
-	if fps == 0 {
-		fps = parseFrameRate(st.AvgRate)
-	}
-	return st.CodecName, st.Width, st.Height, fps, nil
-}
-
-func parseFrameRate(s string) float64 {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "0/0" {
-		return 0
-	}
-	var a, b float64
-	if _, err := fmt.Sscanf(s, "%f/%f", &a, &b); err == nil && b != 0 {
-		return a / b
-	}
-	var v float64
-	if _, err := fmt.Sscanf(s, "%f", &v); err == nil {
-		return v
-	}
-	return 0
+	return append(args, "-f", youtubeFormat, pageURL)
 }

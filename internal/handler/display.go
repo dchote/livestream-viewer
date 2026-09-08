@@ -2,25 +2,22 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/dchote/livestream-viewer/internal/schedule"
 )
 
 func (h *Handlers) DisplayState(w http.ResponseWriter, r *http.Request) {
 	if h.Runtime == nil {
-		WriteJSON(w, http.StatusOK, map[string]any{
-			"display_running":    false,
-			"paused":             true,
-			"pinned":             false,
-			"active_screen":      nil,
-			"next_screen":        nil,
-			"dwell_remaining_ms": 0,
-			"fps":                0,
-			"tiles":              []any{},
-		})
+		// The router always supplies a runtime, so this only guards a
+		// directly constructed Handlers. Returning the typed zero value keeps
+		// the response shape from drifting away from the real one.
+		WriteJSON(w, http.StatusOK, &schedule.State{Paused: true, Tiles: []schedule.TileState{}})
 		return
 	}
 	WriteJSON(w, http.StatusOK, h.Runtime.State())
@@ -67,12 +64,66 @@ func (h *Handlers) DisplayResume(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handlers) engineRunning() bool {
+	return h.Preview != nil && h.Runtime != nil && h.Runtime.State().DisplayRunning
+}
+
 func (h *Handlers) PreviewStream(w http.ResponseWriter, r *http.Request) {
-	WriteError(w, http.StatusServiceUnavailable, "engine_not_running", "display engine is not running", nil)
+	if !h.engineRunning() {
+		WriteError(w, http.StatusServiceUnavailable, "engine_not_running", "display engine is not running", nil)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		WriteError(w, http.StatusInternalServerError, "sse_unsupported", "streaming unsupported", nil)
+		return
+	}
+	// Each viewer costs a connection, a goroutine, and a share of the
+	// encoder's output for as long as it stays connected.
+	releaseSlot, ok := tryAcquireStream(&h.previewClients, maxPreviewClients)
+	if !ok {
+		w.Header().Set("Retry-After", "5")
+		WriteError(w, http.StatusTooManyRequests, "too_many_clients", "preview viewer limit reached", nil)
+		return
+	}
+	defer releaseSlot()
+
+	unsub := h.Preview.Subscribe()
+	defer unsub()
+
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+
+	frame := h.Preview.WaitNextCtx(r.Context(), 3*time.Second)
+	for r.Context().Err() == nil && !h.Preview.Closed() {
+		if frame != nil {
+			_, _ = fmt.Fprintf(w, "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", len(frame))
+			if _, err := w.Write(frame); err != nil {
+				return
+			}
+			_, _ = w.Write([]byte("\r\n"))
+			flusher.Flush()
+		}
+		frame = h.Preview.WaitNextCtx(r.Context(), 2*time.Second)
+	}
 }
 
 func (h *Handlers) PreviewFrame(w http.ResponseWriter, r *http.Request) {
-	WriteError(w, http.StatusServiceUnavailable, "engine_not_running", "display engine is not running", nil)
+	if !h.engineRunning() {
+		WriteError(w, http.StatusServiceUnavailable, "engine_not_running", "display engine is not running", nil)
+		return
+	}
+	unsub := h.Preview.Subscribe()
+	defer unsub()
+	frame := h.Preview.WaitNextCtx(r.Context(), 3*time.Second)
+	if frame == nil {
+		WriteError(w, http.StatusServiceUnavailable, "preview_not_ready", "preview frame not ready", nil)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(frame)
 }
 
 func (h *Handlers) Events(w http.ResponseWriter, r *http.Request) {
@@ -84,10 +135,14 @@ func (h *Handlers) Events(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "sse_unsupported", "streaming unsupported", nil)
 		return
 	}
+	releaseSlot, ok := tryAcquireStream(&h.sseClients, maxSSEClients)
+	if !ok {
+		w.Header().Set("Retry-After", "5")
+		WriteError(w, http.StatusTooManyRequests, "too_many_clients", "event stream client limit reached", nil)
+		return
+	}
+	defer releaseSlot()
 
-	// Subscribe before writing the opening snapshot. The other order drops any
-	// state change published in between, leaving the client stale until the
-	// next event.
 	var chunks <-chan []byte
 	unsub := func() {}
 	if h.Hub != nil {

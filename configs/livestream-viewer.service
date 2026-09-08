@@ -1,0 +1,39 @@
+[Unit]
+Description=livestream-viewer - native livestream video wall
+Documentation=https://github.com/dchote/livestream-viewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=livestream-viewer
+Group=livestream-viewer
+SupplementaryGroups=video render
+ExecStart=/usr/bin/livestream-viewer -config /etc/livestream-viewer/livestream-viewer.toml
+WorkingDirectory=/var/lib/livestream-viewer
+Restart=on-failure
+RestartSec=5
+Environment=LD_LIBRARY_PATH=/usr/lib/livestream-viewer
+Environment=SDL3_LIBRARY=/usr/lib/livestream-viewer/libSDL3.so.0
+Environment=PATH=/usr/lib/livestream-viewer/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DENO_DIR=/usr/lib/livestream-viewer/bgutil-pot/.deno
+Environment=DENO_NO_UPDATE_CHECK=1
+
+# Display output needs /dev/dri (KMSDRM). Do not set PrivateDevices=yes.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+DeviceAllow=char-drm rw
+DeviceAllow=char-drm_render_node rw
+DevicePolicy=closed
+ReadWritePaths=/var/lib/livestream-viewer /var/log/livestream-viewer
+ReadOnlyPaths=/etc/livestream-viewer /usr/lib/livestream-viewer
+
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

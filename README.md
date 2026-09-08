@@ -1,117 +1,95 @@
 # livestream-viewer
 
-A native, hardware-accelerated livestream viewer and video wall. Renders one or more live streams directly to an attached display using SDL3 and the host's video decoder — no browser, no desktop environment, no compositor in the path.
+A dedicated video wall for live streams — cameras, YouTube, and more — rendered natively to an attached display. No browser kiosk. No desktop session. Configure everything from a web UI, or run it as a Home Assistant add-on.
 
-Configured entirely from an embedded Vue 3 + Vuetify web interface. Runs as a standalone service or as a Home Assistant add-on.
+![Native display output compositing multiple live streams](images/SDL3-display.png)
 
-> **Status: Control plane implemented.** Sources and uploads, the display strategy (screens, layouts, tiles, playlists, transitions, tour), the headless scheduler, SSE state, auth and user management, the embedded Vue management UI, Swagger, and the Home Assistant add-on files can all be built and run today — including headless on any Go-supported platform with `-display=false`. The display engine and stream decode are not implemented yet. See [docs/features/0003-stream-sources-and-display-strategy.md](docs/features/0003-stream-sources-and-display-strategy.md) and the [roadmap](docs/features/0001-project-scaffold.md).
+> **Ready to try.** Sources, layouts, tours, live preview, and windowed display output are implemented. Full-screen panel ownership on Linux is coded and awaiting real-hardware verification. See [docs/features/0004-ingest-and-display-engine.md](docs/features/0004-ingest-and-display-engine.md).
 
-## Supported platforms
+## Install (Home Assistant add-on)
 
-| Role | Platforms |
-|------|-----------|
-| **Control plane** (API, UI, scheduler) | Linux, macOS, Windows — any Go target. Use `-display=false` when there is no attached panel to drive. |
-| **Display output** (when the engine lands) | Linux with DRM/KMS (headless or windowed), plus a native SDL window on desktop Linux and macOS for development. |
-| **Optimised for** | Low-cost and embedded boards — Raspberry Pi 4/5, similar ARM SBCs, and other constrained hosts — with hardware decode when the platform provides it, honest software-fallback reporting when it does not. |
+This is the primary install path. In Home Assistant: **Settings** → **Add-ons** → **Add-on store** → **Repositories**, add `https://github.com/dchote/livestream-viewer`, then install **livestream-viewer**.
 
-The project is **platform-agnostic by design**. Raspberry Pi and other embedded targets are first-class optimisation targets (capacity planning, V4L2/DRM paths, packaging), not a hard dependency.
+Supervisor pulls `ghcr.io/dchote/{arch}-addon-livestream-viewer` matching the add-on version. Those GHCR packages must be public. The image includes FFmpeg 8, SDL3, and YouTube support (`yt-dlp` + Deno). Details: [addon/README.md](addon/README.md).
+
+## Why not a browser on a screen?
+
+Pointing Chromium at a dashboard works until you want more than one stream, a clean cut between layouts, or decent performance on a Pi. Browsers rarely use the host’s video hardware the way you need, and a full desktop stack sits between your content and the panel.
+
+**livestream-viewer** skips that path. It decodes with the hardware when available, composites on the GPU, and owns the display. A dense camera grid is the primary use case — not an afterthought.
+
+## What you get
+
+- **Native output** — Hardware-accelerated decode and compositing to an attached panel (or a development window on your Mac or Linux desktop)
+- **Web management** — Add sources, build layouts, and run tours from a browser — no config files to hand-edit on the device
+- **One binary** — API, UI, and display engine in a single process. Run it as a service, or install it as a Home Assistant add-on
+- **Honest about hardware** — Each source reports whether it will decode on hardware or in software, so you know what a layout will cost before it drops frames
+
+Works on Linux, macOS, and Windows for management. Display output targets Linux panels and desktop windows; Raspberry Pi and similar boards are first-class optimisation targets, not a hard requirement.
 
 ## Quick start (development)
 
 ```bash
+source ./scripts/dev-env.sh   # macOS: points cgo at FFmpeg 8
 ./scripts/build.sh
-./build/livestream-viewer -display=false
+./build/livestream-viewer -display=true
 ```
 
-Open `http://127.0.0.1:8099` (first-run login `admin` / `admin`). Swagger is at `/docs`. Stop with Ctrl+C (a second Ctrl+C forces exit if shutdown stalls).
+Open `http://127.0.0.1:8099` (first login `admin` / `admin`). Use `-display=false` if you only want the API and UI. Full dependency notes are in [docs/build-and-test.md](docs/build-and-test.md).
 
-For hot reload, run the server with `-frontend-embed=false` and `cd frontend && yarn dev`.
-
-## Overview
-
-**Display engine** — Decodes streams with hardware acceleration where the host provides it, uploads frames to GPU textures, and composites them with SDL3. On Linux it can own the panel via KMS/DRM with no desktop session; on a workstation it opens a normal window for development.
-
-**Management UI and REST API on :8099** — Vue 3 + Vuetify frontend embedded in the binary, with Swagger docs at `/docs`.
-
-**Single Go binary** — One process, one deployment. Runs as a systemd (or equivalent) service, or as a Home Assistant add-on with the UI behind ingress.
+Linux `.deb` packages and binaries are a secondary path, published from the same add-on image via the manual **Release** GitHub Action (nFPM). See [docs/build-and-test.md](docs/build-and-test.md#releases).
 
 ## Features
 
-### Stream Sources
+### Bring your streams
 
-- **YouTube live** — Resolved to an HLS manifest via `yt-dlp` (installed by the user, discovered on `PATH`) and refreshed as the manifest expires
-- **RTSP** — IP cameras and NVRs, TCP or UDP transport, with credentials
-- **HLS, DASH, MPEG-TS, SRT, RTMP** — Anything libavformat can open
-- **Uploaded files** — Played on loop, for idle cards and offline fallbacks
-- **Probing** — Every source reports its codec, resolution, frame rate, and whether it will decode on hardware or in software
+![Stream Sources — add, edit, and probe live and file sources](images/stream-sources.png)
 
-### Display Strategies
+- **YouTube live** — Resolved and kept fresh automatically. A local PO token provider (included in the Home Assistant add-on; on a Mac or `.deb` host, `auto` uses a sidecar on `127.0.0.1:4416` if one is running) plus a bundled yt-dlp plugin. If YouTube still treats the host as a bot, upload cookies from a browser that can play the stream. A standalone host also needs [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) on `PATH`.
+- **IP cameras and NVRs** — RTSP with TCP or UDP transport and credentials
+- **Web and contribution feeds** — HLS, DASH, MPEG-TS, SRT, RTMP, and anything else FFmpeg can open
+- **Uploaded files** — Loop for idle cards, station idents, and offline fallbacks
+- **Automatic probing** — Codec, resolution, frame rate, and hardware vs software decode for every source
 
-- **Grid screens** — Multiple sources at once. Layouts follow CCTV/VMS convention: a single full-bleed source (`full`), equal grids (`2x2`, `3x3`, `4x4`), hotspot layouts (`1+3`, `1+5`, `1+7`, `1+12`), and vertical and panoramic variants. Per-tile fit mode, and optional source sequencing within a single tile.
-- **Transition screens** — One full-screen source at a time, stepping through a playlist with a configured transition and per-item dwell time.
-- **Screen tours** — Step through multiple screens on a timer, with a transition between each.
-- **Transitions** — `cut`, `fade` (crossfade or through a colour), and the SMPTE 258M wipe family: bar, box, barn door, iris, ellipse, clock, push, and slide. Duration and CSS-compatible cubic Bézier easing on every one.
+### Layouts that feel like a video wall
 
-### Management Interface
+![Display Strategy — screens, layouts, and screen tours](images/display-strategy.png)
 
-Two primary navigation items:
+- **Grid screens** — Multiple sources at once: full-bleed, equal grids (`2x2`, `3x3`, `4x4`), hotspot layouts (`1+3`, `1+5`, `1+7`, …), plus vertical and panoramic variants. Per-tile fit and optional sequencing inside a tile.
+- **Playlist screens** — One full-screen source at a time, with dwell times and transitions between items
+- **Screen tours** — Step through whole screens on a timer, with a transition between each
+- **Broadcast-style transitions** — Cut, fade, and a full wipe family (bar, box, barn door, iris, ellipse, clock, push, slide), with duration and easing
 
-- **Preview** — Live layout and tile state from the scheduler (composited MJPEG read-back when the display engine lands), plus per-tile decoder health and manual tour controls
-- **Settings** — **Stream Sources**, **Display Strategy**, and for administrators **Users**
+![Grid editor — assign sources and fit modes per tile](images/grid-editor.png)
+
+### See what the wall sees
+
+![Web Preview — live view of the composited output](images/web-preview.png)
+
+The management UI includes a live **Preview** of the composited output, per-tile health, and manual tour controls — plus settings for sources, display strategy, and users. A documented REST API (Swagger at `/docs`) is available for automations and integrations.
+
+## Built for constrained hosts
+
+On a Raspberry Pi or similar board, decode capacity is often the limiting factor. livestream-viewer probes what the machine can actually do and surfaces it in the UI, so a busy grid tells you the cost up front instead of silently falling over.
+
+Platform notes live in [docs/architecture/hardware-decode.md](docs/architecture/hardware-decode.md).
 
 ## Requirements
 
-### Runtime (control plane today)
+**To run (standalone):** a supported OS, FFmpeg 8.x libraries, and SDL3 3.4+ when display output is enabled. `yt-dlp` is required only for YouTube. The binary embeds the bgutil yt-dlp plugin. Linux `.deb` packages also ship Deno and the BgUtils PO token server (`auto` starts it). On a Mac, a sidecar on `127.0.0.1:4416` is used automatically when present. The Home Assistant add-on image already includes these.
 
-- Go-supported OS (Linux, macOS, Windows)
-- Optional on `PATH`: `yt-dlp` (YouTube sources), `ffprobe` / `ffmpeg` (probe and thumbnails)
+**To build:** Go 1.25+ (CGO), Node.js 20+ and Yarn, FFmpeg 8.x headers, and SDL3. On macOS: `brew install ffmpeg@8 sdl3` then `source ./scripts/dev-env.sh`.
 
-### Runtime (display engine — not linked yet)
-
-- Linux with DRM/KMS for headless panel output, or desktop Linux/macOS for a windowed SDL surface
-- SDL3 3.4+ (built with KMSDRM on headless Linux targets)
-- FFmpeg 8.x shared libraries
-
-### Build
-
-- Go 1.25+ with CGO enabled
-- Node.js 20+ and Yarn, for the frontend
-- FFmpeg 8.x development libraries, SDL3 development files, and `pkg-config` — only when linking the display/decode stages
-
-See [docs/build-and-test.md](docs/build-and-test.md) for the full dependency and build guide.
-
-## Hardware decode and constrained hosts
-
-On low-cost and embedded platforms, decode capacity is often the binding constraint. The application probes what the host can actually do and reports it per source, so a dense grid of H.264 cameras tells you what you are asking for rather than silently dropping frames.
-
-Platform-specific notes (for example Raspberry Pi 4 vs Pi 5 V4L2 capabilities) live in [docs/architecture/hardware-decode.md](docs/architecture/hardware-decode.md). Those details inform capacity planning and packaging; they are not a requirement to run the control plane.
+Details: [docs/build-and-test.md](docs/build-and-test.md).
 
 ## Documentation
 
-### Core
-
 - [Product Overview](docs/product-overview.md) — Vision, scope, and features
-- [Technical Overview](docs/technical-overview.md) — Architecture, subsystems, and design decisions
-- [Build and Test](docs/build-and-test.md) — Toolchain, build, and test process
-
-### Architecture
-
-- [Display Pipeline](docs/architecture/display-pipeline.md) — SDL3, KMS/DRM, compositing, and presentation
-- [Stream Ingest](docs/architecture/stream-ingest.md) — Demux, decode, frame handoff, and failure handling
-- [Hardware Decode](docs/architecture/hardware-decode.md) — Platform decode capabilities and the zero-copy analysis
-
-### Patterns
-
-- [Display Strategy](docs/patterns/display-strategy-pattern.md) — Screens, layouts, tiles, and tours
-- [Render Loop](docs/patterns/render-loop-pattern.md) — Main-thread ownership and loop structure
-- [Concurrent State](docs/patterns/concurrent-state-pattern.md) — Command channel, state snapshots, frame slots
-- [Frontend Guide](docs/patterns/frontend-guide.md) — Vue and Vuetify patterns
-- [UI Style Guidelines](docs/patterns/ui-style-guidelines.md) — Layout, spacing, and component conventions
-
-### Reference
-
-- [Glossary](docs/reference/glossary.md) — Layout, transition, and scheduling terminology
-- [Features](docs/features/) — Numbered feature plans
+- [Technical Overview](docs/technical-overview.md) — Architecture and design decisions
+- [Build and Test](docs/build-and-test.md) — Toolchain, CI, and releases
+- [Architecture](docs/architecture/) — Display pipeline, ingest, hardware decode
+- [Patterns](docs/patterns/) — Display strategy, render loop, frontend guide
+- [Glossary](docs/reference/glossary.md) · [Features](docs/features/)
 
 ## License
 

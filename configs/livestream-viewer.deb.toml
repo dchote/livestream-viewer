@@ -1,0 +1,26 @@
+[database]
+path = "/var/lib/livestream-viewer/livestream-viewer.sqlite"
+
+[data]
+dir = "/var/lib/livestream-viewer"
+
+[http]
+port = 8099
+bind = "0.0.0.0"
+jwt_secret = ""
+
+[display]
+enabled = true
+driver = ""
+device = 0
+
+[logging]
+level = "info"
+
+# YouTube: the package ships Deno and the BgUtils PO token server. auto starts
+# that managed provider. The Go binary also copies an embedded yt-dlp plugin
+# into the data directory. yt-dlp itself remains a host package (recommended).
+# If YouTube still returns the bot check, upload cookies under Stream Sources.
+[youtube]
+pot_mode = "auto"
+pot_server_dir = "/usr/lib/livestream-viewer/bgutil-pot"

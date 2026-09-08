@@ -2,7 +2,7 @@
 
 **livestream-viewer** is a dedicated, always-on video wall: it renders one or more live streams directly to an attached display using hardware-accelerated decoding and GPU compositing, and it is configured entirely from a web interface. There is no browser kiosk and no requirement for a desktop environment — when display output is enabled, the application owns the panel.
 
-**Status: Control plane implemented** — Sources, uploads, display strategy, the headless scheduler, and the Vue editors can be built and run with `-display=false` on any Go-supported platform. Display engine and stream decode are not implemented yet.
+**Status: Display engine and control plane implemented** — Sources, display strategy, ingest, SDL compositing, Preview MJPEG, and the Vue editors can be built and run. Use `-display=true` for a windowed SDL surface; `-display=false` keeps the API and scheduler without opening a window.
 
 The project is structured as two cooperating planes inside a single Go binary: a **display engine** that decodes and composites video onto the physical output, and a **control plane** (REST API plus embedded Vue 3 + Vuetify UI) that manages sources, layouts, and scheduling. Like [go-mumble-server](https://github.com/dchote/go-mumble-server), the repository doubles as a Home Assistant add-on repository for one-click install on Home Assistant OS.
 
@@ -36,7 +36,7 @@ Purpose-built alternatives exist but are closed source, licence-encumbered, or a
 
 A **source** is anything that can produce video frames. The user adds sources in the management UI and the application probes each one to report its codec, resolution, and frame rate:
 
-- **YouTube live streams** — Resolved to a playable HLS manifest at playback time and refreshed as the manifest expires. Requires the user to install `yt-dlp` on the host; it is discovered on `PATH` rather than bundled.
+- **YouTube live streams** — Resolved to a playable HLS manifest at playback time and refreshed as the manifest expires. Playback starts a few seconds behind live (`options.buffer_ms`, default 4s) so the clock is smooth; 0 is live-edge. `yt-dlp` is discovered on `PATH` (never compiled into the Go binary). Public livestreams use a local PO token provider for YouTube's bot check. The Go binary embeds the bgutil yt-dlp plugin and copies it to `data/yt-dlp-plugins/bgutil/` at startup. A PO token is not a guarantee: if the watch page still returns `LOGIN_REQUIRED`, cookies from a browser that can play the stream on this host are required (also used for private, members-only, or age-restricted videos). Stored under the data directory, never in SQLite. The Home Assistant add-on and the Linux `.deb` both ship Deno and the BgUtils provider (`pot_mode = "auto"` starts it). A Mac/dev host still needs `yt-dlp` on PATH; `auto` uses a sidecar on `:4416` if Deno+server_dir are missing.
 - **RTSP** — IP cameras and NVRs, over TCP or UDP interleaved transport, with optional credentials.
 - **HLS / DASH / MPEG-TS over HTTP** — The common denominator for web-based live streaming. Any URL that libavformat can open.
 - **SRT and RTMP** — For contribution feeds and legacy ingest endpoints.
@@ -59,7 +59,7 @@ Transition names follow the SMPTE 258M wipe vocabulary as codified by the W3C SM
 
 - **Cut** — Instantaneous switch. The default and the cheapest.
 - **Fade** — Crossfade (both sources visible during the transition) or fade through a solid colour.
-- **Wipe** — A moving boundary reveals the incoming source: bar, box, barn door, iris, ellipse, and clock variants.
+- **Wipe** — A moving boundary reveals the incoming source: bar, box, and barn door. Masked iris, ellipse, and clock wipes are not offered.
 - **Push and slide** — The incoming source displaces the outgoing one (push) or moves over a stationary outgoing one (slide).
 
 Every transition has a duration and an easing curve. Easing is expressed as CSS-compatible cubic Bézier control points, with the familiar named presets (`ease-in`, `ease-out`, `ease-in-out`) as shorthand.
@@ -68,8 +68,8 @@ Every transition has a duration and an easing curve. Easing is expressed as CSS-
 
 The web UI has two primary navigation items:
 
-- **Preview** — A live representation of what the physical display is currently showing, including which screen is active, which tile holds which source, and the health of each decoder. This is a monitoring view, not a second renderer: it shows a throttled, downscaled read-back of the actual composited output so that what you see is what is on the wall. Until the display engine lands, the page renders the scheduler's live layout geometry and tile assignments instead of video, driven by the same SSE state.
-- **Settings** — **Stream Sources** (add, edit, probe, and upload), **Display Strategy** (build screens, arrange tiles or playlists, and order the tour), and for administrators **Users** (RBAC accounts for the management UI).
+- **Preview** — A live representation of what the physical display is currently showing, including which screen is active, which tile holds which source, and the health of each decoder. This is a monitoring view, not a second renderer: it shows a throttled, downscaled read-back of the actual composited output so that what you see is what is on the wall. When the display engine is not running, the page renders the scheduler's live layout geometry and tile assignments instead of video, driven by the same SSE state.
+- **Settings** — **Stream Sources** (add, edit, probe, upload, YouTube provider health, and cookies), **Display Strategy** (build screens, arrange tiles or playlists, and order the tour), and for administrators **Users** (RBAC accounts for the management UI).
 
 The UI is built with Vue 3 and Vuetify 3 and is embedded in the Go binary, so there is nothing separate to deploy.
 
@@ -79,9 +79,9 @@ The web UI is a consumer of the REST API, which is equally available for direct 
 
 ## Deployment
 
-**Home Assistant add-on** — The repository can be added as a Home Assistant add-on repository for one-click install. The management UI is exposed through ingress; on hosts with an attached panel the add-on is granted access to the DRM render nodes so it can drive the display.
+**Home Assistant add-on (primary)** — The repository can be added as a Home Assistant add-on repository for one-click install. The management UI is exposed through ingress; on hosts with an attached panel the add-on is granted access to the DRM render nodes so it can drive the display. The published image includes FFmpeg 8, SDL3, and YouTube support.
 
-**Standalone** — A single binary, run as a systemd (or equivalent) service. On headless Linux no desktop environment is required; the application can take DRM master directly.
+**Standalone** — Linux `.deb` packages and binaries from GitHub Releases, run as a systemd (or equivalent) service. On headless Linux no desktop environment is required; the application can take DRM master directly. YouTube requires host `yt-dlp`. The `.deb` ships Deno and the BgUtils PO token server (`pot_mode = "auto"` starts it); the Go binary embeds the yt-dlp plugin. If YouTube still returns the bot check, upload cookies from a browser that can play the stream.
 
 **Development** — Runs on a normal desktop Linux or macOS workstation. Use `-display=false` for control-plane work; when the engine lands, windowed SDL output supports layout and transition development without dedicated hardware on the desk.
 

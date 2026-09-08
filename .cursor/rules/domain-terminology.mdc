@@ -32,7 +32,7 @@ Never conflate these. They are the most common source of confusion in this domai
 
 ## Transitions
 
-Names follow SMPTE 258M as codified by the W3C SMIL transition module, with a `type` / `subtype` split: `cut`, `fade`, `barWipe`, `boxWipe`, `barnDoorWipe`, `irisWipe`, `ellipseWipe`, `clockWipe`, `pushWipe`, `slideWipe`. Do not invent new names or rename these to something friendlier.
+Names follow SMPTE 258M as codified by the W3C SMIL transition module, with a `type` / `subtype` split. Implemented and offered: `cut`, `fade`, `barWipe`, `boxWipe`, `barnDoorWipe`, `pushWipe`, `slideWipe`. Reserved but withdrawn pending a mask shader: `irisWipe`, `ellipseWipe`, `clockWipe` — do not re-add these to the catalogue without a real implementation. Do not invent new names or rename these to something friendlier.
 
 **Push and slide are different transitions.** In a *push*, the outgoing image is shoved off-screen by the incoming one and both layers move. In a *slide*, the incoming image moves over a stationary outgoing one. Vendors are sloppy about this; we are not.
 

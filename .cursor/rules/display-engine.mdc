@@ -25,13 +25,17 @@ The render loop runs on the process's main OS thread, pinned with `runtime.LockO
 
 8. **Commands carry immutable values**, never a pointer to state the sender will keep mutating.
 9. **Published state is replaced, not mutated.** Build a new struct and `Store` it through the `atomic.Pointer`.
-10. **Frame slots hold the newest frame only.** Triple-buffered, lock-free, no queue. A queue lets the renderer fall behind permanently.
+10. **Frame slots queue a bounded handful of frames and evict the oldest when full.** The bound is what stops the renderer falling behind permanently; the queue is what lets it schedule presentation, which a newest-only handoff cannot express. Never make the queue unbounded, never block the producer on it, and never hold its mutex across a frame copy.
+10a. **Present by media time, not by arrival.** Each source has a presentation clock anchoring its PTS to the wall clock; the renderer picks the frame due at the *next* refresh. Sampling "whatever is newest" makes cadence depend on the phase between two unrelated clocks, which judders on moving content and hides on a fixed camera.
+10b. **Take the refresh interval from the display mode, never from the loop period.** Timing ourselves folds our own overruns into the estimate, so a loop that falls behind concludes the panel slowed down and schedules against a refresh that does not exist. Loop timing is a fallback for drivers that report no mode.
+10c. **Never synchronise sources to each other.** They have no common timebase; each keeps its own clock and the display is master only for presentation. Do spread their *anchors* so a grid does not converge its uploads onto one refresh — one overrun hitches every tile at once, which is worse than any single stream's timing.
 11. **Unbind before teardown.** The engine releases a slot before the worker owning it is cancelled, so the renderer can never sample buffers being freed.
 
 ## Correctness
 
 12. **Animation progress comes from the wall clock, never a frame counter.** A frame-counted transition changes speed exactly when frames drop, which is when it is most visible.
 13. **Round tile geometry to whole pixels.** Sub-pixel edges shimmer on a static wall.
+13a. **All texture uploads for a pass precede all draw calls in that pass**, so no tile is ever presented half-old and half-new. Check that `SDL_SetRenderVSync` succeeded and report failure; without vsync the wall tears and nothing else will say why.
 14. **Set the texture colorspace explicitly.** YUV textures default to `SDL_COLORSPACE_JPEG` (full-range BT.601); most real video is limited-range BT.709. Use `SDL_CreateTextureWithProperties` with `SDL_PROP_TEXTURE_CREATE_COLORSPACE_NUMBER`.
 15. **Every libav allocation has a matching unref**, established at the allocation site with `defer`. Leaked `AVFrame`/`AVPacket` references are invisible until the process is out of memory.
 

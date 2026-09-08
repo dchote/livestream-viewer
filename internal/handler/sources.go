@@ -29,6 +29,7 @@ func (h *Handlers) ListSources(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "db_error", "failed to list sources", nil)
 		return
 	}
+	h.attachIngestAll(items)
 	WriteJSON(w, http.StatusOK, map[string]any{"sources": emptyIfNil(items)})
 }
 
@@ -69,6 +70,7 @@ func (h *Handlers) CreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.reloadStrategy()
+	h.attachIngest(&s)
 	WriteJSON(w, http.StatusCreated, s)
 }
 
@@ -87,6 +89,7 @@ func (h *Handlers) GetSource(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "db_error", "failed to load source", nil)
 		return
 	}
+	h.attachIngest(&s)
 	WriteJSON(w, http.StatusOK, s)
 }
 
@@ -146,6 +149,7 @@ func (h *Handlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.reloadStrategy()
+	h.attachIngest(&s)
 	WriteJSON(w, http.StatusOK, s)
 }
 
@@ -183,6 +187,17 @@ func (h *Handlers) DeleteSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ProbeSource(w http.ResponseWriter, r *http.Request) {
+	// A probe opens the stream and runs a decode test, so it costs about as
+	// much as a live tile. Reject rather than queue: the caller learns
+	// immediately that the host is busy instead of holding a connection open.
+	release, ok := h.tryAcquireProbe()
+	if !ok {
+		w.Header().Set("Retry-After", "5")
+		WriteError(w, http.StatusTooManyRequests, "probe_busy", "too many probes in progress; try again shortly", nil)
+		return
+	}
+	defer release()
+
 	id, err := parseIDParam(r)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, "bad_request", "invalid source id", nil)
@@ -197,12 +212,14 @@ func (h *Handlers) ProbeSource(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "db_error", "failed to load source", nil)
 		return
 	}
-	prober := source.Prober{Tools: h.Tools}
+	prober := source.Prober{Tools: h.Tools, Caps: h.Caps, ThumbDir: filepath.Join(h.Cfg.DataDir, "thumbnails")}
 	s.Probe = prober.Probe(r.Context(), &s)
 	if err := h.DB.Save(&s).Error; err != nil {
 		WriteError(w, http.StatusInternalServerError, "db_error", "failed to save probe", nil)
 		return
 	}
+	h.attachIngest(&s)
+	h.reloadStrategy()
 	WriteJSON(w, http.StatusOK, s)
 }
 

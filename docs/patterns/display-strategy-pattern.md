@@ -1,6 +1,6 @@
 # Display Strategy Pattern
 
-> **Status:** Implemented for persistence, REST, Vue editors, and the headless scheduler. SDL compositing of the snapshot is not implemented yet.
+> **Status:** Implemented. The engine consumes `strategy.Snapshot`; geometry is unchanged.
 
 The display strategy is the user-facing configuration model: what is shown, where, and for how long. This document defines the model precisely, because it is the shared contract between the database schema, the REST API, the display engine, and the Settings UI.
 
@@ -168,11 +168,10 @@ The `type` / `subtype` split comes from the [W3C SMIL 3.0 Transition Effects Mod
 | `barnDoorWipe` | `vertical`, `horizontal` | Geometric |
 | `pushWipe` | `fromLeft`, `fromRight`, `fromTop`, `fromBottom` | Geometric |
 | `slideWipe` | `fromLeft`, `fromRight`, `fromTop`, `fromBottom` | Geometric |
-| `irisWipe` | `rectangle` | Masked (shader) |
-| `ellipseWipe` | `circle`, `horizontal`, `vertical` | Masked (shader) |
-| `clockWipe` | `clockwiseTwelve`, `clockwiseThree`, `clockwiseSix`, `clockwiseNine` | Masked (shader) |
 
-`GET /api/v1/transitions` returns this catalogue with each type's valid subtypes and whether the platform can currently render it, so the UI never offers a transition that will silently degrade.
+`GET /api/v1/transitions` returns this catalogue with each type's valid subtypes, so the UI never offers a transition that will silently degrade. Every advertised type and subtype reaches a distinct implementation, and tests enforce both properties: one asserts nothing in the catalogue renders as a degradation, another asserts no two subtypes of the same type produce identical draw instructions.
+
+**The masked wipes are not in the catalogue.** `irisWipe` (SMPTE 101), `ellipseWipe` (119–121), and `clockWipe` (201–204) need a per-pixel alpha mask, which means a fragment shader. That is unimplemented, and while they were advertised they simply drew a crossfade. They are withdrawn rather than left as decoration; stored configurations are migrated to `fade` on startup. The SMPTE names are reserved for whenever the shader lands.
 
 **Push versus slide** is defined explicitly because vendors are sloppy about it: in a *push*, the outgoing image is shoved off-screen by the incoming one, so both move. In a *slide*, the incoming image moves over a stationary outgoing one.
 

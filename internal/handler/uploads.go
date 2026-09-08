@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/dchote/livestream-viewer/internal/model"
@@ -17,6 +18,14 @@ import (
 )
 
 const maxUploadBytes = 512 << 20
+
+// multipartMemory is how much of the form ParseMultipartForm keeps in RAM
+// before spilling to temp files. It must stay small: passing the upload limit
+// here would let a single request hold half a gigabyte of heap on a Pi.
+const multipartMemory = 8 << 20
+
+// uploadReadTimeout allows maxUploadBytes to arrive at roughly 300 KiB/s.
+const uploadReadTimeout = 30 * time.Minute
 
 func (h *Handlers) ListUploads(w http.ResponseWriter, r *http.Request) {
 	var items []model.Upload
@@ -28,8 +37,14 @@ func (h *Handlers) ListUploads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) CreateUpload(w http.ResponseWriter, r *http.Request) {
+	// The server-wide read timeout is sized for API calls. A half-gigabyte
+	// video over a slow link legitimately takes minutes, so this handler opts
+	// into a longer deadline; MaxBytesReader still bounds the total.
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadReadTimeout)); err != nil {
+		slog.Debug("could not extend upload read deadline", "error", err)
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1024)
-	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			WriteError(w, http.StatusRequestEntityTooLarge, "too_large", "file exceeds 512 MiB limit", nil)

@@ -82,6 +82,12 @@ func validateKind(s *model.Source, creating bool) error {
 			return fmt.Errorf("transport is only valid for RTSP sources")
 		}
 	}
+	if s.Options.BufferMS != nil {
+		ms := *s.Options.BufferMS
+		if ms < model.MinBufferMS || ms > model.MaxBufferMS {
+			return fmt.Errorf("buffer_ms must be between %d and %d", model.MinBufferMS, model.MaxBufferMS)
+		}
+	}
 	return nil
 }
 

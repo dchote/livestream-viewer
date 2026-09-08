@@ -1,2 +1,2 @@
-// Package capability will probe V4L2 devices, codecs, and DRM nodes. Not implemented in this scaffold.
+// Package capability probes host hardware-decode APIs once at startup.
 package capability

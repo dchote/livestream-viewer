@@ -5,6 +5,10 @@ info:
   description: |
     REST API for livestream-viewer. The management UI is a consumer of this API.
     Interactive docs are served at `/docs`.
+
+    Request bodies are capped at 1 MiB, except `POST /api/v1/uploads` (multipart
+    up to 512 MiB) and `PUT /api/v1/system/youtube/cookies` (multipart up to
+    256 KiB). Exceeding a cap yields 400 or 413.
 servers:
   - url: /
     description: This instance
@@ -28,17 +32,25 @@ paths:
       tags: [system]
       security: []
       summary: Liveness and readiness
+      description: |
+        Returns 200 while the API can serve requests, including when the
+        display engine has failed: the control plane stays reachable so the
+        fault can be diagnosed, and `status` is `degraded` with
+        `ready: false`. A 503 means the database is unreachable and a restart
+        is the appropriate response.
       responses:
         "200":
-          description: OK
+          description: Serving. `status` is `ok` or `degraded`.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status: { type: string }
-                  ready: { type: boolean }
-                  display: { type: boolean }
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Database unreachable. `status` is `unhealthy`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
   /api/v1/openapi.yaml:
     get:
       tags: [system]
@@ -80,6 +92,9 @@ paths:
       tags: [auth]
       security: []
       summary: Authenticate and receive a JWT
+      description: |
+        Attempts are rate limited per client address: five in quick
+        succession, then one more every twenty seconds.
       requestBody:
         required: true
         content:
@@ -104,6 +119,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "500":
           $ref: "#/components/responses/ServerError"
   /api/v1/auth/me:
@@ -256,10 +273,118 @@ paths:
                   platform: { type: string }
                   display_running: { type: boolean }
                   display_enabled: { type: boolean }
-                  yt_dlp: { type: boolean }
-                  ffprobe: { type: boolean }
-                  capabilities: { type: object }
-                  displays: { type: array, items: { type: object } }
+                  yt_dlp:
+                    type: boolean
+                    description: Whether `yt-dlp` is on PATH. YouTube sources need it.
+                  yt_dlp_version:
+                    type: string
+                    description: Output of `yt-dlp --version` when the binary is on PATH.
+                  ffprobe:
+                    type: boolean
+                    description: Whether `ffprobe` is on PATH.
+                  youtube:
+                    $ref: "#/components/schemas/YouTubeStatus"
+                  capabilities:
+                    type: object
+                    properties:
+                      h264_hw: { type: boolean }
+                      hevc_hw: { type: boolean }
+                      videotoolbox: { type: boolean }
+                      vaapi: { type: boolean }
+                      v4l2: { type: array, items: { type: string } }
+                      drm: { type: array, items: { type: string } }
+                  displays:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        width: { type: integer }
+                        height: { type: integer }
+  /api/v1/system/youtube:
+    get:
+      tags: [system]
+      summary: YouTube session and PO token provider status (never the cookie jar)
+      description: |
+        `pot.mode` is `managed`, `external`, or `off` (`auto` is resolved at
+        startup). `pot.running` means `/ping` succeeded. That is not a
+        guarantee of playback. `last_error_code` may be `youtube_bot_check`
+        or `youtube_auth` from live ingest.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YouTubeStatus" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/system/youtube/cookies:
+    put:
+      tags: [system]
+      summary: Upload a Netscape cookies.txt for yt-dlp
+      description: |
+        Used when YouTube still treats this host as a bot after the PO token
+        provider is running, and for private, members-only, or age-restricted
+        videos. Cookie values are never returned.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YouTubeStatus" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: Cookie file exceeds 256 KiB
+    delete:
+      tags: [system]
+      summary: Remove the YouTube cookie jar
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YouTubeStatus" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/system/youtube/po-token:
+    put:
+      tags: [system]
+      summary: Set or clear the optional YouTube PO token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                po_token:
+                  type: string
+                  description: Empty string clears the stored token.
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/YouTubeStatus" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /api/v1/layouts:
     get:
       tags: [catalogues]
@@ -415,6 +540,13 @@ paths:
     post:
       tags: [sources]
       summary: Re-probe codec, resolution, hardware decode
+      description: |
+        Opens the stream and runs a decode test, so it costs about as much as a
+        live tile. At most two probes run at once; further calls are rejected
+        rather than queued.
+
+        On failure, `probe.message` carries the diagnostic with any URL
+        credentials redacted, truncated to 512 characters.
       responses:
         "200":
           description: Probe result
@@ -427,6 +559,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /api/v1/sources/{id}/thumbnail:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -434,9 +568,8 @@ paths:
       tags: [sources]
       summary: Cached still for the UI
       description: |
-        Returns a JPEG under `{data.dir}/thumbnails/{id}.jpg` when present.
-        Thumbnail extraction is deferred until media ingest; without a file this
-        endpoint returns 404.
+        Returns a JPEG under `{data.dir}/thumbnails/{id}.jpg`. Probing writes
+        the still, so a source that has never probed successfully returns 404.
 
         Because browsers cannot set an `Authorization` header on `<img src>`,
         this endpoint also accepts the JWT in the `access_token` query
@@ -732,9 +865,14 @@ paths:
     get:
       tags: [preview]
       summary: MJPEG of the composited output
+      description: |
+        At most four viewers are served at once; each holds a connection for as
+        long as it stays subscribed.
       responses:
         "200":
           description: multipart MJPEG
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/EngineNotRunning"
   /api/v1/preview/frame:
@@ -748,7 +886,7 @@ paths:
             image/jpeg:
               schema: { type: string, format: binary }
         "503":
-          $ref: "#/components/responses/EngineNotRunning"
+          $ref: "#/components/responses/PreviewUnavailable"
   /api/v1/events:
     get:
       tags: [display]
@@ -757,6 +895,8 @@ paths:
         Streams `event: display.state` with a JSON `DisplayState` payload whenever
         scheduler state changes (plus comment keepalives). EventSource clients that
         cannot set an Authorization header may pass `?access_token=<jwt>`.
+
+        At most sixteen clients are served at once.
       parameters:
         - name: access_token
           in: query
@@ -771,6 +911,8 @@ paths:
               schema: { type: string }
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "500":
           $ref: "#/components/responses/ServerError"
 components:
@@ -845,6 +987,28 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    PreviewUnavailable:
+      description: |
+        No JPEG is available. `engine_not_running` means the display engine is
+        down; `preview_not_ready` means the engine is up but the first composited
+        frame has not been encoded yet. Clients should retry the snapshot or
+        wait for the MJPEG stream.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: |
+        A resource guard rejected the request. `Retry-After` carries the
+        suggested delay in seconds. Error codes are `rate_limited` for login
+        attempts, `probe_busy` when the concurrent probe limit is reached, and
+        `too_many_clients` on the streaming endpoints.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds to wait before retrying.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
   schemas:
     Error:
       type: object
@@ -853,6 +1017,27 @@ components:
         error: { type: string }
         message: { type: string }
         details: {}
+    Health:
+      type: object
+      required: [status, ready, database, display, display_running]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unhealthy]
+        ready:
+          type: boolean
+          description: Database reachable and, when the display is enabled, the engine is running.
+        database:
+          type: boolean
+          description: Result of a short-deadline ping against the SQLite pool.
+        display:
+          type: boolean
+          description: Whether the display engine is configured to run.
+        display_running:
+          type: boolean
+        display_error:
+          type: string
+          description: Present only when the engine reported a failure.
     EntityRef:
       type: object
       description: Minimal reference to a resource that blocks a delete.
@@ -951,42 +1136,58 @@ components:
           maxItems: 4
     Transition:
       type: object
+      description: >
+        Names follow SMPTE 258M as codified by the W3C SMIL transition module.
+        `GET /api/v1/transitions` is the authoritative list of types and their
+        valid subtypes. The masked wipes (`irisWipe`, `ellipseWipe`,
+        `clockWipe`) were withdrawn because they need a fragment shader that is
+        not implemented; stored configurations using them are migrated to
+        `fade` on startup.
       properties:
-        type: { type: string }
+        type:
+          type: string
+          enum: [cut, fade, barWipe, boxWipe, barnDoorWipe, pushWipe, slideWipe]
         subtype: { type: string }
         duration_ms: { type: integer }
         easing: { type: string }
         color: { type: string, nullable: true }
     RuntimeConfigPatch:
       type: object
-      description: Sparse update; omitted keys keep their stored value.
+      description: >
+        Sparse update; omitted keys keep their stored value. Numeric values are
+        range-checked and a value outside the documented bounds is rejected with
+        400 `invalid_config` rather than clamped. `output_width` and
+        `output_height` size the window at startup and drive the Preview aspect
+        ratio; changing them does not resize a running window.
       properties:
-        output_width: { type: integer }
-        output_height: { type: integer }
-        output_rotation: { type: integer }
-        default_dwell_ms: { type: integer }
+        output_width: { type: integer, minimum: 160, maximum: 7680 }
+        output_height: { type: integer, minimum: 120, maximum: 4320 }
+        default_dwell_ms: { type: integer, minimum: 100, maximum: 86400000 }
         default_transition: { $ref: "#/components/schemas/Transition" }
         allow_software_fallback: { type: boolean }
-        max_hw_decoders: { type: integer }
-        reconnect_backoff_ms: { type: integer }
-        offline_grace_ms: { type: integer }
-        preview_fps: { type: integer }
-        preview_width: { type: integer }
-        placeholder_color: { type: string }
-        gutter_px: { type: integer }
+        max_hw_decoders:
+          type: integer
+          minimum: 0
+          maximum: 64
+          description: 0 means no limit.
+        reconnect_backoff_ms: { type: integer, minimum: 100, maximum: 60000 }
+        preview_fps: { type: integer, minimum: 1, maximum: 30 }
+        preview_width: { type: integer, minimum: 160, maximum: 1920 }
+        placeholder_color:
+          type: string
+          pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+        gutter_px: { type: integer, minimum: 0, maximum: 256 }
     RuntimeConfig:
       type: object
       properties:
         id: { type: integer }
         output_width: { type: integer }
         output_height: { type: integer }
-        output_rotation: { type: integer }
         default_dwell_ms: { type: integer }
         default_transition: { $ref: "#/components/schemas/Transition" }
         allow_software_fallback: { type: boolean }
         max_hw_decoders: { type: integer }
         reconnect_backoff_ms: { type: integer }
-        offline_grace_ms: { type: integer }
         preview_fps: { type: integer }
         preview_width: { type: integer }
         placeholder_color: { type: string }
@@ -1007,6 +1208,15 @@ components:
             enabled: { type: boolean }
             options: { $ref: "#/components/schemas/SourceOptions" }
             probe: { $ref: "#/components/schemas/ProbeResult" }
+            decoder:
+              type: string
+              description: Live ingest status from the scheduler, when known.
+            error_code:
+              type: string
+              description: Stable ingest error, for example `youtube_bot_check` or `youtube_auth`.
+            error:
+              type: string
+              description: User-facing ingest error. Raw yt-dlp dumps stay in logs.
     SourceWrite:
       type: object
       properties:
@@ -1025,16 +1235,31 @@ components:
         transport: { type: string, enum: [tcp, udp] }
         loop: { type: boolean }
         upload_id: { type: integer }
+        tls_verify: { type: boolean }
+        buffer_ms:
+          type: integer
+          minimum: 0
+          maximum: 30000
+          description: |
+            Jitter buffer in milliseconds. Omitted uses the kind default
+            (4000 for youtube/hls/dash, 0 otherwise). 0 starts at the live
+            edge (lower latency, more hitching on HLS).
+        force_software:
+          type: boolean
+          description: Skip hardware decode even when the host supports it.
     ProbeResult:
       type: object
       properties:
         status: { type: string, enum: [ok, unavailable, error] }
+        code:
+          type: string
+          description: Stable classifier, for example `youtube_bot_check`, `youtube_auth`, or `tool_missing`.
         message: { type: string }
         codec: { type: string }
         width: { type: integer }
         height: { type: integer }
         fps: { type: number }
-        hw_decode: { type: boolean, nullable: true }
+        hw_decode: { type: boolean, nullable: true, description: True only if a hardware frame was actually decoded. On macOS RTSP, false keeps VideoToolbox off. }
         probed_at: { type: string, format: date-time }
     Screen:
       allOf:
@@ -1134,6 +1359,11 @@ components:
         next_screen: { type: integer, nullable: true }
         dwell_remaining_ms: { type: integer }
         fps: { type: number }
+        dropped_frames: { type: integer }
+        display_error: { type: string }
+        degradations:
+          type: array
+          items: { type: string }
         transition:
           type: object
           nullable: true
@@ -1150,5 +1380,48 @@ components:
               source_id: { type: integer, nullable: true }
               source_name: { type: string }
               fit: { type: string }
-              decoder: { type: string }
+              decoder:
+                type: string
+                description: >
+                  `failed` means the worker gave up on the normal reconnect path
+                  (repeated source-resolution failure, or a panic in the decode
+                  session). It still retries at the backoff ceiling.
+                enum: [connecting, hardware, software, reconnecting, offline, disabled, failed]
+              error_code: { type: string }
+              error: { type: string }
               sequence_index: { type: integer }
+        decoders:
+          type: array
+          description: Live ingest health for every configured source, including those not on the current screen.
+          items:
+            type: object
+            properties:
+              source_id: { type: integer }
+              decoder:
+                type: string
+                enum: [connecting, hardware, software, reconnecting, offline, disabled, failed]
+              error_code: { type: string }
+              error: { type: string }
+    YouTubeStatus:
+      type: object
+      description: Process-level YouTube session and provider health. Cookie values are never returned.
+      properties:
+        configured: { type: boolean }
+        youtube_hosts: { type: integer }
+        updated_at: { type: string, format: date-time, nullable: true }
+        po_token: { type: boolean }
+        last_error_code:
+          type: string
+          description: Live ingest classifier, for example `youtube_bot_check` or `youtube_auth`.
+        last_error: { type: string }
+        pot:
+          type: object
+          description: BgUtils PO token provider health. Not a guarantee of playback.
+          properties:
+            mode:
+              type: string
+              enum: [managed, external, off]
+            running: { type: boolean }
+            base_url: { type: string }
+            version: { type: string }
+            last_error: { type: string }

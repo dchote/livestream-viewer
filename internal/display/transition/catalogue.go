@@ -28,12 +28,35 @@ const (
 	FamilyImmediate = "immediate"
 	FamilyAlpha     = "alpha"
 	FamilyGeometric = "geometric"
-	FamilyMasked    = "masked"
 )
 
+// RetiredTypes maps transition types that are no longer offered to their
+// replacement.
+//
+// The masked wipes need a per-pixel alpha mask, which means a fragment shader
+// through the SDL GPU renderer. That is not implemented, and advertising them
+// meant the UI offered three effects that silently rendered as a crossfade.
+// Stored configurations are migrated on startup and still render as the
+// replacement in the meantime.
+var RetiredTypes = map[string]string{
+	"irisWipe":    "fade",
+	"ellipseWipe": "fade",
+	"clockWipe":   "fade",
+}
+
+// Retire rewrites a retired spec onto its replacement. It reports whether the
+// spec changed.
+func Retire(spec Spec) (Spec, bool) {
+	replacement, ok := RetiredTypes[spec.Type]
+	if !ok {
+		return spec, false
+	}
+	spec.Type = replacement
+	spec.Subtype = "crossfade"
+	return spec, true
+}
+
 // Catalogue returns every supported type with valid subtypes.
-// Masked types are listed; Available is true for this control-plane scaffold
-// (the engine will report platform capability later).
 func Catalogue() []TypeInfo {
 	return []TypeInfo{
 		{Type: "cut", Family: FamilyImmediate, Available: true},
@@ -43,9 +66,6 @@ func Catalogue() []TypeInfo {
 		{Type: "barnDoorWipe", Subtypes: []string{"vertical", "horizontal"}, Family: FamilyGeometric, Available: true, DefaultSub: "vertical"},
 		{Type: "pushWipe", Subtypes: []string{"fromLeft", "fromRight", "fromTop", "fromBottom"}, Family: FamilyGeometric, Available: true, DefaultSub: "fromLeft"},
 		{Type: "slideWipe", Subtypes: []string{"fromLeft", "fromRight", "fromTop", "fromBottom"}, Family: FamilyGeometric, Available: true, DefaultSub: "fromLeft"},
-		{Type: "irisWipe", Subtypes: []string{"rectangle"}, Family: FamilyMasked, Available: true, DefaultSub: "rectangle"},
-		{Type: "ellipseWipe", Subtypes: []string{"circle", "horizontal", "vertical"}, Family: FamilyMasked, Available: true, DefaultSub: "circle"},
-		{Type: "clockWipe", Subtypes: []string{"clockwiseTwelve", "clockwiseThree", "clockwiseSix", "clockwiseNine"}, Family: FamilyMasked, Available: true, DefaultSub: "clockwiseTwelve"},
 	}
 }
 

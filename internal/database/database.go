@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -25,6 +26,9 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	if err := tune(db); err != nil {
+		return nil, err
+	}
 
 	if err := db.AutoMigrate(
 		&model.User{},
@@ -45,10 +49,43 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := migrateRetiredTransitions(db); err != nil {
+		return nil, err
+	}
+
 	if err := seed(db); err != nil {
 		return nil, err
 	}
 	return db, nil
+}
+
+// tune configures SQLite for a long-running single-process service.
+//
+// The dataset is tiny but writes arrive concurrently from API handlers, probe
+// results, and the scheduler. With the default rollback journal and no busy
+// timeout those collide as "database is locked" errors that surface to the UI.
+// A single writer connection removes the contention entirely; WAL keeps
+// readers from blocking behind it.
+func tune(db *gorm.DB) error {
+	pragmas := []string{
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA busy_timeout = 5000",
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA foreign_keys = ON",
+	}
+	for _, p := range pragmas {
+		if err := db.Exec(p).Error; err != nil {
+			return fmt.Errorf("%s: %w", p, err)
+		}
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("sql db handle: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
+	return nil
 }
 
 // retiredLayouts maps layout ids that have been removed from the catalogue to
@@ -67,6 +104,62 @@ func migrateRetiredLayouts(db *gorm.DB) error {
 		if res.RowsAffected > 0 {
 			slog.Info("migrated retired layout", "from", old, "to", replacement, "screens", res.RowsAffected)
 		}
+	}
+	return nil
+}
+
+// migrateRetiredTransitions rewrites stored specs whose type is no longer in
+// the catalogue. Transitions are JSON columns, so this is done in Go rather
+// than SQL. Without it a screen saved with a withdrawn type would fail
+// validation on the next strategy build and take the whole display with it.
+func migrateRetiredTransitions(db *gorm.DB) error {
+	migrated := 0
+
+	var cfg model.RuntimeConfig
+	if err := db.First(&cfg).Error; err == nil {
+		if spec, changed := transition.Retire(cfg.DefaultTransition); changed {
+			cfg.DefaultTransition = spec
+			if err := db.Save(&cfg).Error; err != nil {
+				return fmt.Errorf("migrate default transition: %w", err)
+			}
+			migrated++
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("load config for transition migration: %w", err)
+	}
+
+	var screens []model.Screen
+	if err := db.Find(&screens).Error; err != nil {
+		return fmt.Errorf("load screens for transition migration: %w", err)
+	}
+	for i := range screens {
+		spec, changed := transition.Retire(screens[i].Transition)
+		if !changed {
+			continue
+		}
+		if err := db.Model(&screens[i]).Update("transition", spec).Error; err != nil {
+			return fmt.Errorf("migrate screen %d transition: %w", screens[i].ID, err)
+		}
+		migrated++
+	}
+
+	var entries []model.TourEntry
+	if err := db.Find(&entries).Error; err != nil {
+		return fmt.Errorf("load tour entries for transition migration: %w", err)
+	}
+	for i := range entries {
+		spec, changed := transition.Retire(entries[i].Transition)
+		if !changed {
+			continue
+		}
+		if err := db.Model(&entries[i]).Update("transition", spec).Error; err != nil {
+			return fmt.Errorf("migrate tour entry %d transition: %w", entries[i].ID, err)
+		}
+		migrated++
+	}
+
+	if migrated > 0 {
+		slog.Info("migrated retired transitions to fade", "count", migrated)
 	}
 	return nil
 }
@@ -103,13 +196,11 @@ func seed(db *gorm.DB) error {
 		rc := model.RuntimeConfig{
 			OutputWidth:           1920,
 			OutputHeight:          1080,
-			OutputRotation:        0,
 			DefaultDwellMS:        30000,
 			DefaultTransition:     transition.DefaultCut(),
 			AllowSoftwareFallback: true,
 			MaxHWDecoders:         4,
 			ReconnectBackoffMS:    2000,
-			OfflineGraceMS:        5000,
 			PreviewFPS:            2,
 			PreviewWidth:          640,
 			PlaceholderColor:      "#111111",

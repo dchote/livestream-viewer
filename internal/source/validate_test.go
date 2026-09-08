@@ -44,6 +44,17 @@ func TestValidateCreate(t *testing.T) {
 	if err := ValidateCreate(s); err == nil {
 		t.Fatal("invalid transport")
 	}
+
+	bad := 40000
+	s = &model.Source{Name: "yt", Kind: model.KindYouTube, URL: "https://youtube.com/watch?v=x", Options: model.SourceOptions{BufferMS: &bad}}
+	if err := ValidateCreate(s); err == nil {
+		t.Fatal("buffer_ms too large")
+	}
+	ok := 4000
+	s = &model.Source{Name: "yt", Kind: model.KindYouTube, URL: "https://youtube.com/watch?v=x", Options: model.SourceOptions{BufferMS: &ok}}
+	if err := ValidateCreate(s); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestValidateUpdate(t *testing.T) {

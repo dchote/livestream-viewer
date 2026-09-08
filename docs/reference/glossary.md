@@ -61,11 +61,10 @@ Transition names follow **SMPTE 258M** as codified by the [W3C SMIL 3.0 Transiti
 | `barWipe` | `leftToRight`, `topToBottom` | 1, 2 |
 | `boxWipe` | `topLeft`, `topRight`, `bottomRight`, `bottomLeft` | 3–6 |
 | `barnDoorWipe` | `vertical`, `horizontal` | 21, 22 |
-| `irisWipe` | `rectangle` | 101 |
-| `ellipseWipe` | `circle`, `horizontal`, `vertical` | 119–121 |
-| `clockWipe` | `clockwiseTwelve`, `clockwiseThree`, `clockwiseSix`, `clockwiseNine` | 201–204 |
 | `pushWipe` / `slideWipe` | directional | 301+ |
 | `fade` | `crossfade`, `fadeToColor`, `fadeFromColor` | — |
+
+The masked wipes — `irisWipe` (101), `ellipseWipe` (119–121), and `clockWipe` (201–204) — are part of the vocabulary but are **not implemented and not offered**. They require a fragment shader; see [Display Pipeline](../architecture/display-pipeline.md). The names are reserved so they can be reinstated without a vocabulary change.
 
 ### Definitions We Enforce
 
@@ -92,7 +91,8 @@ Follows the [CSS easing function](https://developer.mozilla.org/en-US/docs/Web/C
 | **Source** | Anything that produces video frames: a stream URL, a camera, or an uploaded file. |
 | **Demux** | Splitting a container into elementary streams. Handled by libavformat. |
 | **Depacketise** | Reassembling RTP packets into access units. Handled inside libavformat for RTSP. |
-| **NV12** | The pixel format we render: one full-resolution Y (luma) plane plus one half-resolution interleaved UV (chroma) plane. |
+| **NV12** | Packed 4:2:0 we upload after hardware download: one full-resolution Y plane plus one half-resolution interleaved UV plane. |
+| **I420** / **IYUV** | Planar 4:2:0 (Y, U, V). Software H.264 usually decodes to this; we upload it with `SDL_UpdateYUVTexture` instead of converting to NV12. |
 | **SAND** | Broadcom's 128-byte-column-tiled frame format, emitted by the Raspberry Pi hardware decoder. Also seen as "NC12". Must be detiled or handled with DRM format modifiers. See [Hardware Decode](../architecture/hardware-decode.md). |
 | **DMA-BUF** / **DRM PRIME** | Kernel mechanism for sharing GPU buffers between devices without copying. The basis of any zero-copy path. |
 | **Zero-copy** | Keeping a decoded frame in GPU memory from decoder to display, never touching system memory. Possible on the Pi but not through SDL's public API. |
@@ -100,7 +100,13 @@ Follows the [CSS easing function](https://developer.mozilla.org/en-US/docs/Web/C
 | **Stateless V4L2 request** | Kernel decode API where the client supplies per-frame controls and reference lists. Pi HEVC (`rpivid`). Reached through FFmpeg's `drm` hwaccel, **not** through `hevc_v4l2m2m`, which cannot work. |
 | **KMSDRM** | Kernel Mode Setting / Direct Rendering Manager. Lets an application drive the display with no X11, Wayland, or compositor. |
 | **DRM master** | Exclusive control of a display device. Required for KMSDRM output, so nothing else may own the display. |
-| **Frame slot** | Our triple-buffered, lock-free handoff between a decoder and the renderer. Holds only the newest frame; there is no queue. |
+| **Frame slot** | Our bounded single-producer/single-consumer handoff between a decoder and the renderer. Queues a few frames so the renderer can schedule presentation, and evicts the oldest when full. |
+| **Presentation clock** | Per-source mapping from a stream's media time (PTS) to the wall clock. Decides which queued frame belongs on screen at the next refresh, which is what keeps cadence stable on moving content. |
+| **Buffer** | How far behind live a segmented source (YouTube, HLS, DASH) starts, in seconds (`options.buffer_ms`). A jitter buffer: more delay, smoother playback. RTSP defaults to 0. |
+| **VideoToolbox** | Apple's hardware decode/encode API. On macOS, H.264 decode uses the generic libav decoder plus a VideoToolbox device context (`h264_videotoolbox` is an encoder name). Cannot start mid-GOP; livestream-viewer waits for a keyframe. See [Hardware Decode](../architecture/hardware-decode.md#macos--videotoolbox). |
+| **YouTube cookies** | A Netscape cookie jar uploaded on Stream Sources (or exported via `--cookies-from-browser` / `./scripts/export-youtube-cookies.sh`) and passed to `yt-dlp --cookies`. Needed when YouTube still treats the host as a bot after a PO token, and for private, members-only, or age-restricted videos. Stored at `data/secrets/youtube.cookies`, never returned by the API. |
+| **PO token provider** | Local BgUtils HTTP server that mints YouTube proof-of-origin tokens for yt-dlp. Used for the public-livestream bot check. `auto` starts a managed Deno server when present; otherwise it keeps pinging a sidecar on `127.0.0.1:4416`. A running provider is a health check, not a guarantee. |
+| **bgutil plugin** | yt-dlp PO token plugin **embedded in the Go binary** and copied to `data/yt-dlp-plugins/bgutil/` at startup. Homebrew yt-dlp does not ship it; without `--plugin-dirs` a running HTTP provider is ignored. GPL-3, separate from the MIT Go binary. |
 | **Vsync** | Synchronising presentation to the display's refresh. Paces the render loop. |
 
 ## Terms We Avoid

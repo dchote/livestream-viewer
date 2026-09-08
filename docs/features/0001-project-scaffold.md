@@ -1,8 +1,8 @@
 # 0001: Project Scaffold and Implementation Roadmap
 
-## Status: In Progress
+## Status: Implemented (stages 0–4 for windowed hosts)
 
-Stage 0 and the control-plane / UI / add-on **skeletons** from Stages 5–7 are delivered by [0002](0002-initial-codebase-framework.md). Source and display-strategy editors, the headless scheduler, and SSE landed in [0003](0003-stream-sources-and-display-strategy.md). Display spikes (Stages 1–4) and composited MJPEG preview remain.
+Stage 0 and the control-plane / UI / add-on **skeletons** from Stages 5–7 are delivered by [0002](0002-initial-codebase-framework.md). Source and display-strategy editors, the headless scheduler, and SSE landed in [0003](0003-stream-sources-and-display-strategy.md). Ingest, lock-free frames, and the windowed SDL engine landed in [0004](0004-ingest-and-display-engine.md). KMSDRM-on-panel verification and Pi capacity numbers remain deferred.
 
 ## Summary
 
@@ -74,21 +74,21 @@ Join the two spikes.
 
 ## Stage 5 — Persistence and API
 
-**Skeleton delivered by [0002](0002-initial-codebase-framework.md)** (SQLite, OpenAPI, stub handlers, Swagger, auth). **Control-plane CRUD, probing, SSE, and the source resolver landed in [0003](0003-stream-sources-and-display-strategy.md).** Remaining: preview MJPEG of composited output.
+**Skeleton delivered by [0002](0002-initial-codebase-framework.md)** (SQLite, OpenAPI, stub handlers, Swagger, auth). **Control-plane CRUD, probing, SSE, and the source resolver landed in [0003](0003-stream-sources-and-display-strategy.md); preview MJPEG landed in [0004](0004-ingest-and-display-engine.md).** This stage is complete.
 
 - `internal/model`, `internal/database` — schema and migrations for the entities in [display-strategy-pattern.md](../patterns/display-strategy-pattern.md)
 - `internal/source` — validation and probe; `internal/source/resolver` for yt-dlp, direct, and file (PATH tools, no libav link)
 - `internal/rest`, `internal/handler` — sources, uploads, screens, tour, display commands, SSE hub, SPA handler
 - `api/openapi.yaml` — hand-maintained, served at `/docs`
 - `internal/schedule` — headless wall-clock scheduler (Stage 4 engine stand-in until SDL)
-- `internal/preview` — still deferred: throttled read-back, downscale, JPEG encode, MJPEG stream
+- `internal/preview` — throttled read-back, downscale, JPEG encode, MJPEG stream ([0004](0004-ingest-and-display-engine.md))
 - Auth: bcrypt-hashed accounts, JWT
 
-**Done when:** the entire display strategy can be built through the API and takes effect live, `/docs` is complete, and `openapi.yaml` matches every handler. Composited MJPEG remains a later stage.
+**Done when:** the entire display strategy can be built through the API and takes effect live, `/docs` is complete, and `openapi.yaml` matches every handler.
 
 ## Stage 6 — Frontend
 
-**Shell delivered by [0002](0002-initial-codebase-framework.md)** (theme, nav, page layouts, common components, embed). **Source forms, display-strategy editors, SSE-driven Preview fallback, and `PasswordField` landed in [0003](0003-stream-sources-and-display-strategy.md).** Remaining: PreviewCanvas MJPEG of composited output.
+**Shell delivered by [0002](0002-initial-codebase-framework.md)** (theme, nav, page layouts, common components, embed). **Source forms, display-strategy editors, SSE-driven Preview fallback, and `PasswordField` landed in [0003](0003-stream-sources-and-display-strategy.md); the PreviewCanvas MJPEG landed in [0004](0004-ingest-and-display-engine.md).** This stage is complete.
 
 - Vite, Vue 3, Vuetify 3, Pinia, file-based routing, `importMode: 'sync'`
 - Common components: StandardCard, StandardDialog, BackButton, PasswordField
@@ -102,17 +102,17 @@ Join the two spikes.
 
 ## Stage 7 — Packaging
 
-**Add-on scaffold delivered by [0002](0002-initial-codebase-framework.md)** (`addon/`, `repository.yaml`, Dockerfile). Remaining: GoReleaser `.deb`, DRM on HA OS, add-on image publish.
+**Add-on scaffold and packaging delivered.** Remaining: DRM-on-panel verification on Home Assistant OS.
 
-- GoReleaser configs for `linux/amd64` and `linux/arm64`, plus `.deb` packages
-- `scripts/build-deb.sh` using goreleaser-cross in Docker
-- systemd unit with the required group membership and device access
+- GoReleaser is **not** used for CGO cross builds. `.deb` packages are built with **nFPM** (`packaging/nfpm-*.yaml`, `scripts/package-deb.sh`) from binaries extracted out of the add-on image
+- `scripts/build-deb.sh` builds the add-on image, smoke-checks YouTube/FFmpeg/SDL tooling, extracts the runtime, and packages `.deb`s
+- systemd unit with `video`/`render` groups, `DeviceAllow=char-drm*`, and `/dev/dri` access (no `PrivateDevices`)
 - `addon/` — Home Assistant add-on: `config.yaml`, `build.yaml`, `Dockerfile`, s6 `run`/`finish` scripts, `translations/en.yaml`, `README.md`, `CHANGELOG.md`
 - `repository.yaml` at the repository root
-- `.github/workflows/addon.yml` — multi-arch images to GHCR
-- Ingress support: `getIngressBase()` in the frontend, `<base href>` injection in the Go SPA handler
+- `.github/workflows/release.yml` — manual `workflow_dispatch` for GHCR images, `.deb`s, and GitHub Releases (stable tags created only after a successful build; rolling `dev` assets wiped each run)
+- Ingress support: `getIngressBase()` in the frontend, `<base href>` injection in the Go SPA handler; `ingress_stream: true` for Preview MJPEG and SSE
 
-**Done when:** the add-on installs from the repository URL on Home Assistant OS, the UI opens through ingress, and — when a panel is attached and DRM access is granted — the display lights up.
+**Done when:** the add-on installs from the repository URL on Home Assistant OS, the UI opens through ingress, and — when a panel is attached and DRM access is granted — the display lights up. Image publish is implemented; DRM-master on HA OS remains unverified.
 
 ## Open Questions
 
@@ -124,7 +124,7 @@ These need answers from the spikes or from a decision before the stages that dep
 | Does the Pi's SDL3 GPU renderer support custom fragment shaders? | Masked transitions in Stage 4 | Example of an embedded-Mesa question. If not, `irisWipe`, `ellipseWipe`, and `clockWipe` degrade to `fade` permanently rather than situationally. |
 | How many concurrent decoder instances will constrained SBC hardware blocks accept? | Capacity limits in Stage 3 | Exceeding the limit fails confusingly; we need a hard cap and a clear error. Validate on Raspberry Pi and at least one other target. |
 | Is the Raspberry Pi OS system FFmpeg patched with the V4L2-request hwaccels? | Stage 2, packaging | Pi-specific packaging question. If yes, we avoid shipping the `jc-kynesim` fork for that target. If no, the `.deb` and add-on image must carry it. |
-| Should the add-on image bundle `yt-dlp`? | Stage 7 | The standalone build discovers it on `PATH`. A container has no user-managed `PATH`, so the add-on may need to install it at build time and self-update, or accept that YouTube sources need a manual step. |
+| Should the add-on image bundle `yt-dlp`? | Stage 7 | **Yes, as PATH tools in the image.** The Go binary still discovers `yt-dlp` on `PATH` and does not embed it. The add-on image installs `yt-dlp[default]` (EJS), Deno, and the BgUtils PO token provider, and runs a non-fatal self-update on start. The Go binary embeds the bgutil yt-dlp plugin. Standalone `.deb` installs still expect host `yt-dlp` and ship Deno plus the provider server. |
 | Output rotation: SDL or KMS? | Stage 4 | Portrait installations are common. SDL-level rotation costs a render target; KMS-level rotation may not be available on all outputs. |
 
 ## Non-Goals for v0.1

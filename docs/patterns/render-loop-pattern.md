@@ -1,6 +1,6 @@
 # Render Loop Pattern
 
-> **Status:** Design. Not yet implemented.
+> **Status:** Implemented. The engine ticks `schedule.Runtime` from the render loop when display is on.
 
 The render loop is the heart of the display plane. Its structure is dictated by one hard platform constraint and one design commitment.
 
@@ -52,7 +52,7 @@ func (e *Engine) Run(ctx context.Context) error {
         e.pumpEvents()      // 1. SDL event queue — mandatory under KMSDRM
         e.drainCommands()   // 2. non-blocking read of the command channel
         e.advanceSchedule() // 3. dwell timers, transition progress
-        e.sampleFrames()    // 4. newest frame per visible source
+        e.sampleFrames()    // 4. frame due at the next refresh, per source
         e.uploadTextures()  // 5. main-thread-only uploads
         scene := e.compose()// 6. build the scene as data
         e.draw(scene)       // 7. issue SDL draw calls
@@ -99,11 +99,15 @@ t := e.easing.Eval(raw)
 
 ### 4. Sample frames
 
-For each visible source, an atomic load of the newest published frame from its slot. Non-blocking by construction — if the decoder has published nothing new, the previously uploaded texture is reused and nothing further happens for that source this frame.
+For each visible source, ask that source's presentation clock which queued frame belongs on screen at the *next* refresh, and discard anything older. Non-blocking by construction — if nothing new is due, the previously uploaded texture is reused and nothing further happens for that source this frame.
+
+Choosing by media time rather than taking whatever is newest is what makes the cadence repeatable. The decoder's clock and the display's clock are independent, so a source sampled at "newest wins" lands two refreshes apart, then three, then two, and drops a frame outright whenever two arrive inside one refresh interval. That pattern is invisible on a fixed camera and reads as judder on anything that moves. See [Display Pipeline](../architecture/display-pipeline.md#presentation-timing).
 
 ### 5. Upload textures
 
-`SDL_UpdateNVTexture` per source that produced a new frame. This is the step that forces the whole main-thread design. Uploads are skipped for sources with no new frame, so a wall of 5 fps cameras on a 60 Hz display does almost no upload work.
+`SDL_UpdateNVTexture` or `SDL_UpdateYUVTexture` per source that produced a new frame. This is the step that forces the whole main-thread design. Uploads are skipped for sources with no new frame, so a wall of 5 fps cameras on a 60 Hz display does almost no upload work.
+
+Skipping follows from the clock returning nil, backstopped by a `Frame.Seq` comparison for the untimed path. `Slot.Take()` re-returns the frame the consumer already holds, so a renderer that uploads whatever `Take()` hands back re-sends the same megabytes to the GPU at the refresh rate to arrive at the pixels it is already displaying.
 
 A resolution change here destroys and recreates the texture; see [Display Pipeline](../architecture/display-pipeline.md#texture-lifecycle).
 
@@ -113,11 +117,15 @@ Build the scene as plain data — an ordered list of `{ texture, srcRect, dstRec
 
 ### 7. Draw
 
-Walk the scene and issue SDL calls. When a transition is active, each screen composes into its own render target first, then the transition draws the two targets.
+Walk the scene and issue SDL calls. In steady state — one screen, no blend — this draws straight to the backbuffer. When a transition is active, or the preview needs a surface to downscale, each screen composes into its own render target first and the transition draws the two targets; that path costs three full-screen writes per frame instead of one, so it is not taken by default.
+
+All uploads (step 5) precede all draw calls, which is what makes a half-old, half-new tile impossible within one presented frame.
 
 ### 8. Present
 
-One `SDL_RenderPresent`. Vsync blocks here, which is the loop's only wait and the thing that sets the frame rate.
+One `SDL_RenderPresent`. Vsync blocks here, which is the loop's only wait and the thing that sets the frame rate. `SDL_SetRenderVSync` is checked at startup: some drivers refuse it, and the result is tearing with no other symptom, so a refusal is reported as a `vsync_unavailable` degradation.
+
+A loop period beyond 1.5× the refresh interval means a vblank was missed, which hitches every tile at once and is counted as a dropped frame in display state.
 
 ### 9. Publish state
 

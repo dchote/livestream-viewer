@@ -1,0 +1,67 @@
+# nFPM config for linux/arm64. Binary + vendored FFmpeg/SDL come from
+# build/prebuilt/arm64 (see scripts/extract-runtime.sh / scripts/build-deb.sh).
+# VERSION is expanded from the environment (e.g. VERSION=0.1.0).
+name: livestream-viewer
+arch: arm64
+platform: linux
+version: ${VERSION}
+section: video
+priority: optional
+maintainer: Daniel Chote <daniel@chote.com>
+description: Native hardware-accelerated livestream viewer and video wall
+vendor: Daniel Chote
+homepage: https://github.com/dchote/livestream-viewer
+license: MIT
+contents:
+  - src: build/prebuilt/arm64/livestream-viewer
+    dst: /usr/bin/livestream-viewer
+    file_info:
+      mode: 0755
+  - src: build/prebuilt/arm64/bin/deno
+    dst: /usr/lib/livestream-viewer/bin/deno
+    file_info:
+      mode: 0755
+  - src: build/prebuilt/arm64/lib/
+    dst: /usr/lib/livestream-viewer
+    type: tree
+  - src: build/prebuilt/arm64/bgutil-pot/
+    dst: /usr/lib/livestream-viewer/bgutil-pot
+    type: tree
+  - src: configs/livestream-viewer.deb.toml
+    dst: /usr/share/livestream-viewer/livestream-viewer.toml
+    file_info:
+      mode: 0644
+  - src: configs/livestream-viewer.service
+    dst: /lib/systemd/system/livestream-viewer.service
+    file_info:
+      mode: 0644
+depends:
+  - libssl3
+  - libdrm2
+  - libgbm1
+  - libegl1
+  - libgles2
+  - libgl1
+  - libx11-6
+  - libxext6
+  - libxcursor1
+  - libxi6
+  - libxrandr2
+  - libxfixes3
+  - libwayland-client0
+  - libxkbcommon0
+  - libva2
+  - libva-drm2
+  - libv4l-0
+  - libsrt1.5-openssl | libsrt1.5-gnutls
+  - libcairo2
+  - libpango-1.0-0
+  - libjpeg62-turbo | libjpeg62
+  - libgif7
+  - librsvg2-2
+recommends:
+  - yt-dlp
+  - libgl1-mesa-dri | mesa-libgallium
+scripts:
+  postinstall: scripts/postinstall.sh
+  preremove: scripts/preremove.sh

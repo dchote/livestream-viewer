@@ -1,2 +1,2 @@
-// Package texture will cache per-source GPU textures. Not implemented in this scaffold.
+// Package texture caches NV12/IYUV SDL textures on the render thread.
 package texture

@@ -13,7 +13,10 @@ export function useDisplayState() {
     next_screen: null,
     dwell_remaining_ms: 0,
     fps: 0,
+    dropped_frames: 0,
+    degradations: [],
     tiles: [],
+    decoders: [],
     error: null,
   })
 

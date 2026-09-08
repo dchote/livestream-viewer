@@ -1,6 +1,6 @@
 # Hardware Decode
 
-> **Status:** Design and research notes. Not yet implemented.
+> **Status:** Implemented for VideoToolbox (macOS: keyframe wait, no `LOW_DELAY` on hardware, `hwaccel_flags` for profile/level) and best-effort VA-API/DRM/V4L2 enumeration on Linux. Pi capacity numbers remain qualitative.
 
 livestream-viewer is platform-agnostic: it probes the host at startup and reports what each codec can do. **This document is the optimisation and capacity-planning guide for constrained Linux hosts**, with Raspberry Pi 4/5 as the primary worked example because their V4L2 surface is unusually sharp-edged. Other SBCs and desktop GPUs follow the same probe → report → fall back pattern; only the device nodes and hwaccel names change.
 
@@ -83,9 +83,14 @@ There *is* a hook: `SDL_CreateTextureWithProperties` accepts `SDL_PROP_TEXTURE_C
 decode with hwaccel drm → DRM PRIME frame (SAND tiled)
   → hwdownload + format=nv12   (detile + copy to system memory)
   → SDL_UpdateNVTexture on an SDL_PIXELFORMAT_NV12 streaming texture
+
+software H.264 (Pi 5)
+  → YUV420P in system memory
+  → pack into the frame-slot pool as I420
+  → SDL_UpdateYUVTexture on an SDL_PIXELFORMAT_IYUV streaming texture
 ```
 
-This is exactly what other Pi 5 projects do — the [homebridge-unifi-protect Pi 5 work](https://github.com/hjdhjd/homebridge-unifi-protect/issues/1318) uses the same `hwdownload,format=nv12` step. The cost is one memcpy plus a SAND→linear detile per frame per stream. At 1080p on a Pi 5 this is very manageable, and it keeps us inside plain `SDL_Renderer` with no EGL code at all.
+This is exactly what other Pi 5 projects do for hardware decode — the [homebridge-unifi-protect Pi 5 work](https://github.com/hjdhjd/homebridge-unifi-protect/issues/1318) uses the same `hwdownload,format=nv12` step. The cost is one memcpy plus a SAND→linear detile per frame per stream. Software H.264 skips the NV12 conversion and uploads planar 4:2:0. At 1080p on a Pi 5 this is very manageable, and it keeps us inside plain `SDL_Renderer` with no EGL code at all.
 
 Critically, this decision is **reversible**. The frame delivery interface in `internal/frame` describes a frame as either system-memory planes or an opaque hardware handle, and the upload step in `internal/display/texture` is written against that interface. Zero-copy becomes a second implementation behind an existing seam rather than a rewrite.
 
@@ -118,6 +123,17 @@ At startup, once, the prober records:
 | VA-API | Development machines only |
 
 The result is exposed at `GET /api/v1/system/info` and rendered in the UI, so a user can see "Pi 5 · HEVC: hardware · H.264: software" before designing a nine-tile wall.
+
+## macOS / VideoToolbox
+
+On a Mac the generic H.264 decoder plus a VideoToolbox device context is the hardware path (`h264_videotoolbox` is an encoder name). It works for files and for many livestreams. It is brittle on live RTSP:
+
+1. **Join mid-GOP.** VideoToolbox cannot start on a P-frame. Feeding those pictures used to log `hardware accelerator failed to decode picture` until the next IDR. The decode worker (and the hardware probe) now wait for a keyframe before `SendPacket`.
+2. **`AV_CODEC_FLAG_LOW_DELAY`.** That flag is for software live decode. Combined with VideoToolbox it yields `vt decoder cb: output image buffer is null` (`kVTVideoDecoderMalfunctionErr`). Hardware opens do not set it.
+3. **Profile / level.** IP cameras often advertise High@L5.1 or Constrained Baseline that does not match the SPS. Opens pass `hwaccel_flags=+allow_profile_mismatch+ignore_level`.
+4. **UniFi Protect and similar.** Many of those bitstreams still fail after a keyframe (changing PPS, SEI, long GOPs). Probe records `hw_decode` only if a hardware frame was actually produced; RTSP stays on software unless that probe succeeded.
+
+Residual VT picture-failure logs are demoted so they do not drown the process log; a session that never publishes still falls back to software (`errHWUnusable`).
 
 ## Capacity Guidance
 

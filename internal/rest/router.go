@@ -19,12 +19,17 @@ import (
 	"github.com/dchote/livestream-viewer/internal/model"
 	"github.com/dchote/livestream-viewer/internal/schedule"
 	"github.com/dchote/livestream-viewer/internal/source/resolver"
+	"github.com/dchote/livestream-viewer/internal/source/youtube"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"gorm.io/gorm"
 )
 
 func New(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub *events.Hub, tools resolver.Tools) http.Handler {
+	return NewWith(db, cfg, feFS, rt, hub, tools, nil)
+}
+
+func NewWith(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub *events.Hub, tools resolver.Tools, setup func(*handler.Handlers)) http.Handler {
 	if rt == nil {
 		rt = schedule.New(nil, cfg.DisplayEnabled)
 	}
@@ -32,7 +37,16 @@ func New(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub 
 		hub = events.NewHub()
 	}
 	h := handler.New(db, cfg, rt, hub)
+	if tools.CookiesFile == "" {
+		tools.CookiesFile = youtube.CookiesPath(cfg.DataDir)
+	}
+	if tools.POTokenFile == "" {
+		tools.POTokenFile = youtube.POTokenPath(cfg.DataDir)
+	}
 	h.Tools = tools
+	if setup != nil {
+		setup(h)
+	}
 	rt.SetOnChange(func(st *schedule.State) {
 		hub.PublishDisplayState(st)
 	})
@@ -48,6 +62,7 @@ func New(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub 
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors)
+	r.Use(handler.LimitRequestBody)
 
 	r.Get("/health", h.Health)
 	r.Get("/api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +83,7 @@ func New(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub 
 			r.Post("/auth/change-password", h.ChangePassword)
 
 			r.Get("/system/info", h.SystemInfo)
+			r.Get("/system/youtube", h.GetYouTube)
 			r.Get("/layouts", h.Layouts)
 			r.Get("/transitions", h.Transitions)
 			r.Get("/config", h.GetConfig)
@@ -97,6 +113,10 @@ func New(db *gorm.DB, cfg *config.Config, feFS fs.FS, rt *schedule.Runtime, hub 
 				r.Delete("/users/{id}", h.DeleteUser)
 
 				r.Patch("/config", h.PatchConfig)
+
+				r.Put("/system/youtube/cookies", h.PutYouTubeCookies)
+				r.Delete("/system/youtube/cookies", h.DeleteYouTubeCookies)
+				r.Put("/system/youtube/po-token", h.PutYouTubePOToken)
 
 				r.Post("/sources", h.CreateSource)
 				r.Patch("/sources/{id}", h.PatchSource)

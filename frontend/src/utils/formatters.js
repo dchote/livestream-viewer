@@ -42,11 +42,19 @@ export function formatResolution(probe) {
 
 export function formatProbeSummary(probe) {
   if (!probe || !probe.status) return 'Not probed'
+  if (probe.code === 'youtube_bot_check') return probe.message || 'YouTube bot check failed'
+  if (probe.code === 'youtube_auth') return probe.message || 'Sign in required'
   if (probe.status === 'unavailable') return probe.message || 'Probe unavailable'
   if (probe.status === 'error') return probe.message || 'Probe failed'
   const bits = [probe.codec, formatResolution(probe)]
   if (probe.fps) bits.push(`${Number(probe.fps).toFixed(0)} fps`)
   return bits.filter(Boolean).join(' · ') || 'OK'
+}
+
+/** Live ingest error wins over a stale probe summary. */
+export function formatSourceIssue(item) {
+  if (item?.error) return item.error
+  return formatProbeSummary(item?.probe)
 }
 
 export function kindLabel(kind) {

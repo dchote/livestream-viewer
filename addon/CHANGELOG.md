@@ -2,5 +2,7 @@
 
 ## 0.1.0
 
-- Initial add-on scaffold: control plane, embedded UI, Swagger, ingress.
-- Display engine and stream decode are not included yet.
+- Control plane, embedded UI, Swagger, and Home Assistant ingress.
+- Ingest, hardware decode probe (VideoToolbox waits for a keyframe; RTSP stays on software unless probe produced a hardware frame), and SDL3 display engine (windowed and KMSDRM).
+- Add-on image includes FFmpeg 8, SDL3 3.4+ with KMSDRM, Mesa, and a YouTube stack (yt-dlp with EJS, Deno, BgUtils PO token provider, bgutil yt-dlp plugin). yt-dlp self-updates on start. Cookies remain available for the bot check and for private/members/age-gated videos.
+- Preview MJPEG and SSE require ingress streaming.

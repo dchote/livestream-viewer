@@ -5,7 +5,7 @@ import "testing"
 func TestCatalogueTypes(t *testing.T) {
 	want := []string{
 		"cut", "fade", "barWipe", "boxWipe", "barnDoorWipe",
-		"pushWipe", "slideWipe", "irisWipe", "ellipseWipe", "clockWipe",
+		"pushWipe", "slideWipe",
 	}
 	got := Catalogue()
 	if len(got) != len(want) {
@@ -43,5 +43,30 @@ func TestValidSubtype(t *testing.T) {
 func TestEasingPresets(t *testing.T) {
 	if len(EasingPresets()) != 5 {
 		t.Fatalf("want 5 presets, got %d", len(EasingPresets()))
+	}
+}
+
+// The catalogue is the contract the API and UI are built from: it must never
+// advertise a type that has been withdrawn, and must mark what it does offer
+// as available.
+func TestCatalogueExcludesRetiredTypes(t *testing.T) {
+	for _, info := range Catalogue() {
+		if _, retired := RetiredTypes[info.Type]; retired {
+			t.Errorf("%s is retired but still advertised", info.Type)
+		}
+		if !info.Available {
+			t.Errorf("%s is advertised but not available", info.Type)
+		}
+		if len(info.Subtypes) > 0 && info.DefaultSub == "" {
+			t.Errorf("%s has subtypes but no default", info.Type)
+		}
+		if info.DefaultSub != "" && !ValidSubtype(info.Type, info.DefaultSub) {
+			t.Errorf("%s default subtype %q is not valid", info.Type, info.DefaultSub)
+		}
+	}
+	for typ := range RetiredTypes {
+		if ValidSubtype(typ, "") {
+			t.Errorf("%s should no longer validate", typ)
+		}
 	}
 }

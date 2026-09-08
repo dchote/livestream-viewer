@@ -10,7 +10,7 @@
         {{ kindLabel(item.kind) }}
       </template>
       <template #item.probe="{ item }">
-        {{ formatProbeSummary(item.probe) }}
+        {{ formatSourceIssue(item) }}
       </template>
       <template #item.status="{ item }">
         <SourceProbeChip :source="item" />
@@ -60,7 +60,7 @@
 import { computed } from 'vue'
 import { useDisplay } from 'vuetify'
 import SourceProbeChip from '@/components/sources/SourceProbeChip.vue'
-import { formatProbeSummary, kindLabel } from '@/utils/formatters'
+import { formatSourceIssue, kindLabel } from '@/utils/formatters'
 
 defineProps({
   sources: {

@@ -73,6 +73,36 @@ func TestByIDUnknown(t *testing.T) {
 
 // "1x1" was retired in favour of the full-bleed layout, which has identical
 // geometry. Databases are migrated by database.migrateRetiredLayouts.
+func TestFitContainLetterbox(t *testing.T) {
+	cell := PixelRect{X: 0, Y: 0, W: 640, H: 640}
+	src, dst := Fit(cell, 1920, 1080, "contain")
+	if src != (PixelRect{0, 0, 1920, 1080}) {
+		t.Fatalf("src %+v", src)
+	}
+	if dst.W != 640 || dst.H != 360 || dst.X != 0 || dst.Y != 140 {
+		t.Fatalf("dst %+v", dst)
+	}
+}
+
+func TestFitCoverCrops(t *testing.T) {
+	cell := PixelRect{X: 10, Y: 20, W: 640, H: 640}
+	src, dst := Fit(cell, 1920, 1080, "cover")
+	if dst != cell {
+		t.Fatalf("dst %+v", dst)
+	}
+	if src.W <= 0 || src.H <= 0 || src.W > 1920 || src.H > 1080 {
+		t.Fatalf("src %+v", src)
+	}
+}
+
+func TestFitFillStretches(t *testing.T) {
+	cell := PixelRect{X: 1, Y: 2, W: 3, H: 4}
+	src, dst := Fit(cell, 1920, 1080, "fill")
+	if dst != cell || src.W != 1920 || src.H != 1080 {
+		t.Fatalf("src %+v dst %+v", src, dst)
+	}
+}
+
 func TestRetired1x1IsGone(t *testing.T) {
 	if _, ok := ByID("1x1"); ok {
 		t.Fatal("1x1 should be retired in favour of the full-bleed layout")

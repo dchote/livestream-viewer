@@ -164,3 +164,140 @@ func TestPlaylistScreen(t *testing.T) {
 		t.Fatal("playlist step")
 	}
 }
+
+func TestComposeViewPlaylistTransition(t *testing.T) {
+	clock := NewManualClock(time.Unix(0, 0).UTC())
+	rt := New(clock, false)
+	a, b := uint(1), uint(2)
+	rt.ApplyStrategy(&strategy.Snapshot{
+		Tour: strategy.TourSnap{Entries: []strategy.TourEntrySnap{
+			{ScreenID: 9, DwellMS: 60_000, Transition: transition.DefaultCut()},
+		}},
+		Screens: map[uint]*strategy.ScreenSnap{
+			9: {
+				ID: 9, Kind: model.ScreenKindTransition, Loop: true,
+				Transition: transition.Spec{Type: "fade", Subtype: "crossfade", DurationMS: 400},
+				Items: []strategy.PlaylistItemSnap{
+					{SourceID: a, DwellMS: 1000, Fit: model.FitFill},
+					{SourceID: b, DwellMS: 1000, Fit: model.FitContain},
+				},
+			},
+		},
+		Sources: map[uint]*strategy.SourceRef{1: {ID: 1, Name: "a", Enabled: true}, 2: {ID: 2, Name: "b", Enabled: true}},
+	})
+	clock.Add(1000 * time.Millisecond)
+	rt.Tick()
+	clock.Add(100 * time.Millisecond)
+	rt.Tick()
+	v := rt.ComposeView()
+	if v.Incoming == nil {
+		t.Fatal("expected incoming playlist layer")
+	}
+	if v.Transition.Type != "fade" {
+		t.Fatalf("transition %+v", v.Transition)
+	}
+	if v.Progress <= 0 {
+		t.Fatalf("progress %v", v.Progress)
+	}
+	foundA, foundB := false, false
+	for _, id := range v.Needed {
+		if id == a {
+			foundA = true
+		}
+		if id == b {
+			foundB = true
+		}
+	}
+	if !foundA || !foundB {
+		t.Fatalf("needed %+v", v.Needed)
+	}
+}
+
+func TestComposeViewPrerollsInactiveScreens(t *testing.T) {
+	clock := NewManualClock(time.Unix(0, 0).UTC())
+	rt := New(clock, false)
+	gridSrc, fullSrc, disabled := uint(1), uint(2), uint(3)
+	rt.ApplyStrategy(&strategy.Snapshot{
+		Tour: strategy.TourSnap{
+			Enabled: false,
+			Entries: []strategy.TourEntrySnap{
+				{ScreenID: 1, DwellMS: 60_000, Transition: transition.DefaultCut()},
+			},
+		},
+		Screens: map[uint]*strategy.ScreenSnap{
+			1: {
+				ID: 1, Name: "Grid", Kind: model.ScreenKindGrid,
+				Tiles: []strategy.TileSnap{{Index: 0, SourceID: &gridSrc}},
+			},
+			2: {
+				ID: 2, Name: "Driveway", Kind: model.ScreenKindGrid,
+				Tiles: []strategy.TileSnap{{Index: 0, SourceID: &fullSrc}},
+			},
+			3: {
+				ID: 3, Name: "Off", Kind: model.ScreenKindGrid,
+				Tiles: []strategy.TileSnap{{Index: 0, SourceID: &disabled}},
+			},
+		},
+		Sources: map[uint]*strategy.SourceRef{
+			1: {ID: 1, Name: "grid", Enabled: true},
+			2: {ID: 2, Name: "full", Enabled: true},
+			3: {ID: 3, Name: "off", Enabled: false},
+		},
+	})
+	v := rt.ComposeView()
+	if v.Outgoing.ScreenID != 1 {
+		t.Fatalf("active screen %d", v.Outgoing.ScreenID)
+	}
+	found1, found2, found3 := false, false, false
+	for _, id := range v.Needed {
+		switch id {
+		case 1:
+			found1 = true
+		case 2:
+			found2 = true
+		case 3:
+			found3 = true
+		}
+	}
+	if !found1 || !found2 {
+		t.Fatalf("wanted preroll of screens 1 and 2, needed %+v", v.Needed)
+	}
+	if found3 {
+		t.Fatalf("disabled source must not preroll: %+v", v.Needed)
+	}
+}
+
+func TestSetDecoderHealth(t *testing.T) {
+	rt := New(nil, false)
+	src := uint(4)
+	rt.ApplyStrategy(&strategy.Snapshot{
+		Tour: strategy.TourSnap{Entries: []strategy.TourEntrySnap{
+			{ScreenID: 1, DwellMS: 60_000, Transition: transition.DefaultCut()},
+		}},
+		Screens: map[uint]*strategy.ScreenSnap{
+			1: {ID: 1, Kind: model.ScreenKindGrid, Tiles: []strategy.TileSnap{{Index: 0, SourceID: &src}}},
+		},
+		Sources: map[uint]*strategy.SourceRef{4: {ID: 4, Name: "cam", Enabled: true}},
+	})
+	rt.SetDecoderHealth(4, DecoderHardware, "", "")
+	if rt.State().Tiles[0].Decoder != DecoderHardware {
+		t.Fatalf("decoder %s", rt.State().Tiles[0].Decoder)
+	}
+	if len(rt.State().Decoders) != 1 || rt.State().Decoders[0].Decoder != DecoderHardware {
+		t.Fatalf("decoders %+v", rt.State().Decoders)
+	}
+	rt.SetDecoderHealth(4, DecoderFailed, "youtube_auth", "sign in")
+	got := rt.State().Tiles[0]
+	if got.ErrorCode != "youtube_auth" || got.Error != "sign in" {
+		t.Fatalf("tile %+v", got)
+	}
+	code, msg := rt.YouTubeAuthIssue()
+	if code != "youtube_auth" || msg != "sign in" {
+		t.Fatalf("auth issue %q %q", code, msg)
+	}
+	rt.SetDecoderHealth(4, DecoderFailed, "youtube_bot_check", "bot")
+	code, msg = rt.YouTubeAuthIssue()
+	if code != "youtube_bot_check" || msg != "bot" {
+		t.Fatalf("bot-check issue %q %q", code, msg)
+	}
+}

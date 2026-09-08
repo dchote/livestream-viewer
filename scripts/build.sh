@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+if [[ -f "$ROOT/scripts/dev-env.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$ROOT/scripts/dev-env.sh"
+fi
+
 mkdir -p build
 
 SKIP_FRONTEND="${SKIP_FRONTEND:-false}"

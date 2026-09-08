@@ -1,0 +1,277 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        required: true
+        type: choice
+        options:
+          - dev
+          - stable
+        default: dev
+      version:
+        description: Stable version (must match addon/config.yaml, no v prefix)
+        required: false
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  DEBIAN_BASE_VERSION: "9.2.0"
+  DENO_VERSION: "2.9.6"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      git_tag: ${{ steps.meta.outputs.git_tag }}
+      pkg_version: ${{ steps.meta.outputs.pkg_version }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve channel and version
+        id: meta
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          CONFIG_VERSION="$(grep '^version:' addon/config.yaml | sed 's/version: *"\?\([^"]*\)"\?/\1/' | tr -d ' ')"
+          echo "config.yaml version=${CONFIG_VERSION}"
+          SHORT_SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+
+          if [ "${CHANNEL}" = "stable" ]; then
+            VERSION="${INPUT_VERSION:-}"
+            if [ -z "${VERSION}" ]; then
+              echo "stable releases require the version input" >&2
+              exit 1
+            fi
+            VERSION="${VERSION#v}"
+            if [ "${CONFIG_VERSION}" != "${VERSION}" ]; then
+              echo "addon/config.yaml version '${CONFIG_VERSION}' does not match input '${VERSION}'" >&2
+              exit 1
+            fi
+
+            TAG="v${VERSION}"
+            if git rev-parse "${TAG}" >/dev/null 2>&1; then
+              EXISTING="$(git rev-list -n 1 "${TAG}")"
+              if [ "${EXISTING}" != "${GITHUB_SHA}" ]; then
+                echo "tag ${TAG} already points at ${EXISTING}, not ${GITHUB_SHA}" >&2
+                echo "Bump addon/config.yaml (and CHANGELOG) for a new release, or re-run from the tagged commit." >&2
+                exit 1
+              fi
+              echo "tag ${TAG} already matches this commit (idempotent re-run)"
+            fi
+
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "image_tag=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "git_tag=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "pkg_version=${VERSION}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=dev" >> "$GITHUB_OUTPUT"
+            echo "image_tag=dev" >> "$GITHUB_OUTPUT"
+            echo "git_tag=dev" >> "$GITHUB_OUTPUT"
+            echo "pkg_version=${CONFIG_VERSION}-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: prepare
+    timeout-minutes: 180
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            ha_arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - goarch: arm64
+            ha_arch: aarch64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image names
+        id: image
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "name=${{ env.REGISTRY }}/${owner}/${{ matrix.ha_arch }}-addon-livestream-viewer" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push add-on image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./addon/Dockerfile
+          push: true
+          load: false
+          platforms: ${{ matrix.platform }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ needs.prepare.outputs.image_tag }}
+          build-args: |
+            BUILD_FROM=ghcr.io/hassio-addons/debian-base/${{ matrix.ha_arch }}:${{ env.DEBIAN_BASE_VERSION }}
+            BUILD_VERSION=${{ needs.prepare.outputs.pkg_version }}
+            BUILD_COMMIT=${{ github.sha }}
+            DENO_VERSION=${{ env.DENO_VERSION }}
+          labels: |
+            io.hass.type=addon
+            io.hass.name=livestream-viewer
+            io.hass.description=Native hardware-accelerated livestream viewer and video wall
+            io.hass.arch=${{ matrix.ha_arch }}
+            io.hass.version=${{ needs.prepare.outputs.image_tag }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.pkg_version }}
+          cache-from: type=gha,scope=addon-${{ matrix.goarch }}
+          cache-to: type=gha,mode=max,scope=addon-${{ matrix.goarch }}
+
+      - name: Pull image and smoke-check runtime tools
+        run: |
+          set -euo pipefail
+          img="${{ steps.image.outputs.name }}:${{ needs.prepare.outputs.image_tag }}"
+          docker pull --platform ${{ matrix.platform }} "${img}"
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint /bin/bash "${img}" -lc '
+            set -euo pipefail
+            yt-dlp --version
+            deno --version
+            ffmpeg -version | head -n1
+            ffprobe -version | head -n1
+            test -e "${SDL3_LIBRARY:-/opt/sdl3/lib/libSDL3.so.0}"
+            test -f /etc/yt-dlp.conf
+            livestream-viewer --version
+          '
+
+      - name: Extract runtime and package .deb
+        run: |
+          set -euo pipefail
+          img="${{ steps.image.outputs.name }}:${{ needs.prepare.outputs.image_tag }}"
+          ./scripts/extract-runtime.sh "${img}" "build/prebuilt/${{ matrix.goarch }}"
+          cp "build/prebuilt/${{ matrix.goarch }}/livestream-viewer" "livestream-viewer_linux_${{ matrix.goarch }}"
+          VERSION="${{ needs.prepare.outputs.pkg_version }}" ARCH="${{ matrix.goarch }}" ./scripts/package-deb.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goarch }}
+          path: |
+            dist/*.deb
+            livestream-viewer_linux_${{ matrix.goarch }}
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - name: Create stable git tag (after successful builds)
+        if: needs.prepare.outputs.channel == 'stable'
+        env:
+          TAG: ${{ needs.prepare.outputs.git_tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            EXISTING="$(git rev-list -n 1 "${TAG}")"
+            if [ "${EXISTING}" != "${GITHUB_SHA}" ]; then
+              echo "refusing to move ${TAG} from ${EXISTING} to ${GITHUB_SHA}" >&2
+              exit 1
+            fi
+            echo "tag ${TAG} already at this commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "${TAG}" "${GITHUB_SHA}"
+            git push origin "${TAG}"
+          fi
+
+      - name: Wipe previous rolling-dev assets
+        if: needs.prepare.outputs.channel == 'dev'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view dev >/dev/null 2>&1; then
+            gh release view dev --json assets --jq '.assets[].name' \
+              | while IFS= read -r asset; do
+                  [ -n "${asset}" ] || continue
+                  gh release delete-asset dev "${asset}" --yes
+                done
+          fi
+
+      - name: Publish GitHub pre-release (dev)
+        if: needs.prepare.outputs.channel == 'dev'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev
+          name: Development
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          body: |
+            Rolling development build from `${{ github.sha }}`.
+            Artifacts are replaced on every successful `channel=dev` run.
+
+            Add-on image: `ghcr.io/dchote/{arch}-addon-livestream-viewer:dev`
+          files: |
+            artifacts/*.deb
+            artifacts/livestream-viewer_linux_amd64
+            artifacts/livestream-viewer_linux_arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish GitHub Release (stable)
+        if: needs.prepare.outputs.channel == 'stable'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.git_tag }}
+          generate_release_notes: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*.deb
+            artifacts/livestream-viewer_linux_amd64
+            artifacts/livestream-viewer_linux_arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,2 +1,2 @@
-// Package preview will throttle GPU read-back and JPEG-encode MJPEG. Not implemented in this scaffold.
+// Package preview throttles GPU read-back into JPEG for the management UI.
 package preview

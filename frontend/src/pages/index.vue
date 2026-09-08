@@ -1,5 +1,5 @@
 <template>
-  <v-container class="page-content">
+  <v-container class="page-content" fluid>
     <StandardCard title="Preview" title-class="text-h5">
       <v-alert
         v-if="display.error"
@@ -10,6 +10,25 @@
         {{ display.error }}
       </v-alert>
       <v-alert
+        v-if="youtubeAuthError"
+        type="error"
+        density="compact"
+        class="mb-4"
+      >
+        {{ youtubeAuthError }}
+        <template v-if="auth.isAdmin" #append>
+          <v-btn variant="text" size="small" to="/settings/sources">Open Stream Sources</v-btn>
+        </template>
+      </v-alert>
+      <v-alert
+        v-if="(display.degradations || []).length"
+        type="warning"
+        density="compact"
+        class="mb-4"
+      >
+        {{ (display.degradations || []).join(', ') }}
+      </v-alert>
+      <v-alert
         v-if="!display.display_running"
         type="info"
         density="compact"
@@ -17,11 +36,38 @@
       >
         Display engine is not running. Preview shows layout geometry from the scheduler until the engine is started.
       </v-alert>
+      <v-alert
+        v-else-if="streamFailed"
+        type="warning"
+        density="compact"
+        class="mb-4"
+      >
+        Preview stream unavailable. The engine serves a limited number of viewers at once; close another
+        preview tab and retry. Layout geometry is shown meanwhile.
+        <template #append>
+          <v-btn variant="text" size="small" @click="retryStream">Retry</v-btn>
+        </template>
+      </v-alert>
 
       <div class="preview-stage mb-4">
         <div class="preview-frame" :style="{ aspectRatio: String(aspect) }">
+          <img
+            v-if="showStream"
+            :key="streamAttempt"
+            :src="mjpegSrc"
+            alt="Composited output"
+            class="preview-mjpeg"
+            @load="streamLoaded = true"
+            @error="onStreamError"
+          >
+          <div
+            v-if="showStream && !streamLoaded"
+            class="preview-connecting d-flex align-center justify-center"
+          >
+            <v-progress-circular indeterminate color="primary" />
+          </div>
           <LayoutDiagram
-            v-if="previewRects.length"
+            v-if="!showStream && previewRects.length"
             :rects="previewRects"
             :aspect="aspect"
             :empty="emptyMap"
@@ -39,7 +85,7 @@
               </div>
             </template>
           </LayoutDiagram>
-          <div v-else class="preview-surface d-flex align-center justify-center">
+          <div v-else-if="!showStream" class="preview-surface d-flex align-center justify-center">
             <div class="text-center">
               <v-icon size="48" class="mb-2">mdi-monitor-off</v-icon>
               <div class="text-body-2">No active screen</div>
@@ -89,6 +135,10 @@
         density="compact"
         :items-per-page="50"
       >
+        <template #item.decoder="{ item }">
+          <div>{{ item.decoder }}</div>
+          <div v-if="item.error" class="text-caption text-error">{{ item.error }}</div>
+        </template>
         <template #bottom />
       </v-data-table>
     </StandardCard>
@@ -96,7 +146,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import StandardCard from '@/components/common/StandardCard.vue'
 import LayoutDiagram from '@/components/display/LayoutDiagram.vue'
 import { useDisplayState } from '@/composables/useDisplayState'
@@ -115,7 +165,41 @@ const config = ref({ output_width: 1920, output_height: 1080 })
 const busy = ref(false)
 const hiddenThumbs = reactive({})
 
+const youtubeAuthError = computed(() => {
+  const tile = (display.tiles || []).find((t) => t.error_code === 'youtube_auth' || t.error_code === 'youtube_bot_check')
+  if (tile?.error) return tile.error
+  const d = (display.decoders || []).find((x) => x.error_code === 'youtube_auth' || x.error_code === 'youtube_bot_check')
+  return d?.error || ''
+})
 const aspect = computed(() => (config.value.output_width || 1920) / (config.value.output_height || 1080))
+// An <img> cannot read a response status, so a rejected stream (the viewer
+// limit, or the engine stopping mid-stream) surfaces only as an error event.
+// Fall back to the layout diagram rather than leaving a broken image.
+const streamFailed = ref(false)
+const streamAttempt = ref(0)
+const streamLoaded = ref(false)
+const showStream = computed(() => display.display_running && !streamFailed.value)
+const mjpegSrc = computed(() => {
+  const token = getToken()
+  const q = token ? `?access_token=${encodeURIComponent(token)}` : ''
+  return `${getIngressBase()}api/v1/preview/stream${q}`
+})
+
+// Remounting the element is what restarts the request; the URL is unchanged.
+function retryStream() {
+  streamFailed.value = false
+  streamLoaded.value = false
+  streamAttempt.value += 1
+}
+
+function onStreamError() {
+  streamFailed.value = true
+  streamLoaded.value = false
+}
+
+watch(() => display.display_running, (running) => {
+  if (running) retryStream()
+})
 const screenItems = computed(() => selectItems(screens.value))
 const screenName = computed(() => nameByID(screens.value))
 const nextScreenLabel = computed(() => {
@@ -217,11 +301,17 @@ onMounted(async () => {
 .preview-stage {
   background: #000;
   width: 100%;
-  max-width: 960px;
 }
 
 .preview-frame {
   width: 100%;
+  position: relative;
+}
+
+.preview-connecting {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
 }
 
 .preview-surface {
@@ -229,6 +319,14 @@ onMounted(async () => {
   height: 100%;
   min-height: 180px;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.preview-mjpeg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
 }
 
 .preview-thumb {

@@ -14,13 +14,19 @@ var revCounter atomic.Int64
 
 // Snapshot is an immutable, fully-resolved display strategy.
 type Snapshot struct {
-	Rev          int64
-	OutputWidth  int
-	OutputHeight int
-	GutterPx     int
-	Tour         TourSnap
-	Screens      map[uint]*ScreenSnap
-	Sources      map[uint]*SourceRef
+	Rev                   int64
+	OutputWidth           int
+	OutputHeight          int
+	GutterPx              int
+	PlaceholderColor      string
+	PreviewFPS            int
+	PreviewWidth          int
+	MaxHWDecoders         int
+	AllowSoftwareFallback bool
+	ReconnectBackoffMS    int
+	Tour                  TourSnap
+	Screens               map[uint]*ScreenSnap
+	Sources               map[uint]*SourceRef
 }
 
 // TourSnap is the resolved tour.
@@ -99,10 +105,16 @@ func Build(db *gorm.DB) (*Snapshot, error) {
 	}
 
 	snap := &Snapshot{
-		Rev:          revCounter.Add(1),
-		OutputWidth:  cfg.OutputWidth,
-		OutputHeight: cfg.OutputHeight,
-		GutterPx:     cfg.GutterPx,
+		Rev:                   revCounter.Add(1),
+		OutputWidth:           cfg.OutputWidth,
+		OutputHeight:          cfg.OutputHeight,
+		GutterPx:              cfg.GutterPx,
+		PlaceholderColor:      cfg.PlaceholderColor,
+		PreviewFPS:            cfg.PreviewFPS,
+		PreviewWidth:          cfg.PreviewWidth,
+		MaxHWDecoders:         cfg.MaxHWDecoders,
+		AllowSoftwareFallback: cfg.AllowSoftwareFallback,
+		ReconnectBackoffMS:    cfg.ReconnectBackoffMS,
 		Tour: TourSnap{
 			Enabled: tour.Enabled,
 			Loop:    tour.Loop,

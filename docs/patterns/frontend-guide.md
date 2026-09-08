@@ -1,6 +1,6 @@
 # Frontend Patterns Guide
 
-> **Status:** Implemented for the management UI, including Stream Sources and Display Strategy editors. Preview MJPEG of composited output waits on the display engine; the Preview page uses a client-side layout diagram until then.
+> **Status:** Implemented for the management UI. Preview shows MJPEG of the composited output when the display engine is running, and a layout diagram otherwise.
 
 This document defines patterns and conventions for the Vue 3 + Vuetify 3 management frontend. All frontend code follows these conventions.
 
@@ -21,7 +21,7 @@ frontend/src/
 ├── components/
 │   ├── common/         # StandardCard, StandardDialog, PasswordField (ListToolbar/BackButton optional stubs)
 │   ├── admin/          # EditUserRoleDialog, CreateUserDialog
-│   ├── sources/        # SourceForm, SourceList, SourceProbeChip, UploadDropzone
+│   ├── sources/        # SourceForm, SourceList, SourceProbeChip, UploadDropzone, YouTubeSessionCard
 │   └── display/        # LayoutPicker, TileEditor, PlaylistEditor, TransitionEditor, ScreensEditor, TourEditor, LayoutDiagram
 ├── stores/             # Pinia stores
 ├── composables/        # useDisplayState, useEventStream, useLayouts
@@ -53,9 +53,10 @@ A first login (seeded admin, or any account an administrator just created) lands
 
 A monitoring view, not a second renderer. It shows what the physical display is actually doing:
 
-- **Layout diagram** — Until the display engine runs, Preview draws a client-side diagram from `GET /api/v1/layouts` plus scheduler tile names, with a clear "engine not running" notice. `GET /api/v1/preview/stream` stays `503 engine_not_running`. The Settings pages remain fully usable in that state. MJPEG of composited output is a later stage.
+- **Canvas** — The preview fills the content column (`v-container` is `fluid`) and keeps the configured output aspect ratio. There is no pixel max-width on the stage.
+- **Layout diagram** — Until the display engine runs, Preview draws a client-side diagram from `GET /api/v1/layouts` plus scheduler tile names, with a clear "engine not running" notice. `GET /api/v1/preview/stream` stays `503 engine_not_running`. When the engine is running, Preview shows MJPEG of the composited output (`GET /api/v1/preview/stream`) and a connecting spinner until the first JPEG arrives. The Settings pages remain fully usable in either state.
 - **Active screen indicator** — Which screen is showing, what is next, and where the tour is in its dwell.
-- **Tile status** — Per tile: source name, decoder state, resolution, whether it is on hardware or software decode.
+- **Tile status** — Per tile: source name, decoder state, resolution, whether it is on hardware or software decode. A `youtube_bot_check` or `youtube_auth` failure on any tile shows an error banner with a link to Stream Sources.
 - **Manual controls** — Previous, Next, Pause/Resume, and jump-to-screen. These map to the `POST /api/v1/display/*` endpoints.
 
 Live data comes from the SSE stream, never from polling. See `useEventStream`.
@@ -64,8 +65,9 @@ Live data comes from the SSE stream, never from polling. See `useEventStream`.
 
 A list of sources with an "Add Source" button right-aligned in the section header. Each row shows name, kind, probe summary (codec, resolution, frame rate), decode path, and status. Row actions are right-aligned on one line: **Probe** as text, Edit/Delete as icon buttons. On mobile the Probe summary column is hidden.
 
-- Adding a source opens a StandardDialog whose fields change with the selected `kind`. YouTube shows a notice if `yt-dlp` is unavailable, read from `GET /api/v1/system/info`.
-- **Probe** is an explicit action per source, and its result is what makes the UI honest about capacity. Show the decode path (hardware or software) prominently — this is the number a user needs before building a nine-tile grid.
+- Adding a source opens a StandardDialog whose fields change with the selected `kind`. The primary button is **Create** on add and **Save** when editing. YouTube shows a Terms of Service / yt-dlp notice, and a warning if `yt-dlp` is unavailable, from `GET /api/v1/system/info`. **Buffer (seconds)** is the jitter buffer (`options.buffer_ms`); YouTube/HLS/DASH default to 4. **Force software decode** skips hardware even when the probe would use it.
+- A **YouTube** `StandardCard` appears below the source list only when at least one source has `kind` YouTube. The card face shows token-provider and cookie status; cookie upload, export help, and the optional PO token live in a collapsed **Configuration** expansion panel (`flat`, `accordion`). A `youtube_bot_check` / `youtube_auth` failure expands that panel. Cookies are needed when YouTube still treats the host as a bot, and for private, members-only, or age-restricted videos. On a Mac, `./scripts/export-youtube-cookies.sh` dumps a Netscape jar from a local browser (Chrome may prompt for the keychain). Live `youtube_bot_check` / `youtube_auth` failures also show on Preview as a banner, and as **Bot check** / **Sign in required** on the source chip. The sources page consumes the same SSE `display.state` as Preview so status chips follow live decoder health (`connecting` / hardware / software / offline).
+- **Probe** is an explicit action per source, and its result is what makes the UI honest about capacity. Show the decode path (hardware or software) prominently — this is the number a user needs before building a nine-tile grid. On macOS, RTSP `hw_decode` is true only if VideoToolbox actually produced a frame. Live chips prefer the running decoder over the last probe.
 - File uploads use a dedicated dropzone posting to `POST /api/v1/uploads`, with progress.
 - Deleting a source that is in use surfaces the API's list of referencing screens in the confirmation dialog rather than a bare error.
 

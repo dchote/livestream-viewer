@@ -1,2 +1,2 @@
-// Package ingest will run demux/decode workers. Not implemented in this scaffold.
+// Package ingest runs per-source libav decode workers and libav probing.
 package ingest

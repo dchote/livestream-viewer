@@ -16,3 +16,13 @@ device = 0
 
 [logging]
 level = "info"
+
+[youtube]
+pot_mode = "auto"
+# auto: managed Deno server if pot_server_dir is ready, else a sidecar
+# already answering GET /ping on pot_url (default http://127.0.0.1:4416).
+# pot_url = "http://127.0.0.1:4416"
+# pot_port = 4416
+# pot_server_dir = ""
+# cookies_from_browser = "chrome"  # ignored when data/secrets/youtube.cookies exists
+# Or export a jar from Terminal: ./scripts/export-youtube-cookies.sh

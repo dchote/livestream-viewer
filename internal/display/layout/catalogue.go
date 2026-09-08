@@ -218,3 +218,53 @@ func Solve(l Layout, width, height, gutter int) []PixelRect {
 	}
 	return out
 }
+
+// Fit places a video rectangle inside a cell according to contain/cover/fill.
+// src is the region of the video to sample; dst is where it is drawn on the output.
+func Fit(cell PixelRect, videoW, videoH int, mode string) (src, dst PixelRect) {
+	if cell.W <= 0 || cell.H <= 0 || videoW <= 0 || videoH <= 0 {
+		return PixelRect{}, cell
+	}
+	switch mode {
+	case "cover":
+		return fitCover(cell, videoW, videoH)
+	case "fill":
+		return PixelRect{X: 0, Y: 0, W: videoW, H: videoH}, cell
+	default: // contain
+		return fitContain(cell, videoW, videoH)
+	}
+}
+
+func fitContain(cell PixelRect, videoW, videoH int) (src, dst PixelRect) {
+	src = PixelRect{X: 0, Y: 0, W: videoW, H: videoH}
+	scale := math.Min(float64(cell.W)/float64(videoW), float64(cell.H)/float64(videoH))
+	dw := int(math.Round(float64(videoW) * scale))
+	dh := int(math.Round(float64(videoH) * scale))
+	dst = PixelRect{
+		X: cell.X + (cell.W-dw)/2,
+		Y: cell.Y + (cell.H-dh)/2,
+		W: dw,
+		H: dh,
+	}
+	return src, dst
+}
+
+func fitCover(cell PixelRect, videoW, videoH int) (src, dst PixelRect) {
+	dst = cell
+	scale := math.Max(float64(cell.W)/float64(videoW), float64(cell.H)/float64(videoH))
+	sw := int(math.Round(float64(cell.W) / scale))
+	sh := int(math.Round(float64(cell.H) / scale))
+	if sw > videoW {
+		sw = videoW
+	}
+	if sh > videoH {
+		sh = videoH
+	}
+	src = PixelRect{
+		X: (videoW - sw) / 2,
+		Y: (videoH - sh) / 2,
+		W: sw,
+		H: sh,
+	}
+	return src, dst
+}

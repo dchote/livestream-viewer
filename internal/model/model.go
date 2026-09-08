@@ -27,7 +27,12 @@ const (
 	ScreenKindGrid       = "grid"
 	ScreenKindTransition = "transition"
 
-	MinDwellMS = 1000
+	MinDwellMS  = 1000
+	MinBufferMS = 0
+	MaxBufferMS = 30000
+	// DefaultBufferMSSegmented is the jitter buffer for YouTube, HLS, and DASH
+	// when options.buffer_ms is omitted. About two to three HLS segments.
+	DefaultBufferMSSegmented = 4000
 
 	// MinPasswordLength is mirrored by frontend/src/utils/passwords.js.
 	MinPasswordLength = 8
@@ -79,13 +84,11 @@ type RuntimeConfig struct {
 	ID                    uint            `json:"id" gorm:"primaryKey"`
 	OutputWidth           int             `json:"output_width"`
 	OutputHeight          int             `json:"output_height"`
-	OutputRotation        int             `json:"output_rotation"`
 	DefaultDwellMS        int             `json:"default_dwell_ms"`
 	DefaultTransition     transition.Spec `json:"default_transition" gorm:"serializer:json"`
 	AllowSoftwareFallback bool            `json:"allow_software_fallback"`
 	MaxHWDecoders         int             `json:"max_hw_decoders"`
 	ReconnectBackoffMS    int             `json:"reconnect_backoff_ms"`
-	OfflineGraceMS        int             `json:"offline_grace_ms"`
 	PreviewFPS            int             `json:"preview_fps"`
 	PreviewWidth          int             `json:"preview_width"`
 	PlaceholderColor      string          `json:"placeholder_color" gorm:"size:32"`
@@ -99,11 +102,37 @@ type SourceOptions struct {
 	Transport string `json:"transport,omitempty"`
 	Loop      *bool  `json:"loop,omitempty"`
 	UploadID  *uint  `json:"upload_id,omitempty"`
+	// TLSVerify applies to RTSPS (RTSP over TLS). Nil means do not verify
+	// (typical for LAN NVR certificates). Set true to require a valid cert.
+	TLSVerify *bool `json:"tls_verify,omitempty"`
+	// BufferMS is the jitter buffer in milliseconds. Nil means the kind
+	// default (4s for YouTube/HLS/DASH, 0 for RTSP and the rest). 0 is an
+	// explicit live-edge / low-latency choice.
+	BufferMS *int `json:"buffer_ms,omitempty"`
+	// ForceSoftware skips hardware decode even when the probe and host
+	// would otherwise use it.
+	ForceSoftware bool `json:"force_software,omitempty"`
+}
+
+// EffectiveBufferMS is the jitter buffer used at open. Segmented live
+// defaults to DefaultBufferMSSegmented so playback is smooth unless the
+// operator opts into live-edge latency.
+func (s Source) EffectiveBufferMS() int {
+	if s.Options.BufferMS != nil {
+		return *s.Options.BufferMS
+	}
+	switch s.Kind {
+	case KindYouTube, KindHLS, KindDASH:
+		return DefaultBufferMSSegmented
+	default:
+		return 0
+	}
 }
 
 // ProbeResult is the cached outcome of probing a source.
 type ProbeResult struct {
 	Status   string    `json:"status,omitempty"`
+	Code     string    `json:"code,omitempty"`
 	Message  string    `json:"message,omitempty"`
 	Codec    string    `json:"codec,omitempty"`
 	Width    int       `json:"width,omitempty"`
@@ -126,6 +155,11 @@ type Source struct {
 	Probe     ProbeResult   `json:"probe" gorm:"serializer:json"`
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`
+
+	// Live ingest, filled by the API from the scheduler. Not persisted.
+	Decoder   string `json:"decoder,omitempty" gorm:"-"`
+	ErrorCode string `json:"error_code,omitempty" gorm:"-"`
+	Error     string `json:"error,omitempty" gorm:"-"`
 }
 
 func (Source) TableName() string { return "sources" }

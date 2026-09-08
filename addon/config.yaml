@@ -10,9 +10,13 @@ arch:
 init: false
 ingress: true
 ingress_port: 8099
+ingress_stream: true
 panel_icon: mdi:monitor-multiple
 startup: application
 boot: auto
+timeout: 30
+udev: true
+apparmor: false
 devices:
   - /dev/dri
 video: true

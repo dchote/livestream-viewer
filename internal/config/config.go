@@ -27,6 +27,12 @@ type Config struct {
 	DisplayDevice  int
 	LoggingLevel   string
 	FrontendEmbed  bool
+
+	YouTubePOTMode            string
+	YouTubePOTURL             string
+	YouTubePOTPort            int
+	YouTubePOTServerDir       string
+	YouTubeCookiesFromBrowser string
 }
 
 type fileConfig struct {
@@ -35,6 +41,7 @@ type fileConfig struct {
 	HTTP     httpSection     `toml:"http"`
 	Display  displaySection  `toml:"display"`
 	Logging  loggingSection  `toml:"logging"`
+	YouTube  youtubeSection  `toml:"youtube"`
 }
 
 type databaseSection struct {
@@ -61,6 +68,14 @@ type loggingSection struct {
 	Level string `toml:"level"`
 }
 
+type youtubeSection struct {
+	POTMode            string `toml:"pot_mode"`
+	POTURL             string `toml:"pot_url"`
+	POTPort            int    `toml:"pot_port"`
+	POTServerDir       string `toml:"pot_server_dir"`
+	CookiesFromBrowser string `toml:"cookies_from_browser"`
+}
+
 func defaults() Config {
 	return Config{
 		DatabasePath:   "data/livestream-viewer.sqlite",
@@ -70,6 +85,8 @@ func defaults() Config {
 		DisplayEnabled: false,
 		LoggingLevel:   "info",
 		FrontendEmbed:  true,
+		YouTubePOTMode: "auto",
+		YouTubePOTPort: 4416,
 	}
 }
 
@@ -192,6 +209,21 @@ func loadTOML(path string, cfg *Config) error {
 	if fc.Logging.Level != "" {
 		cfg.LoggingLevel = fc.Logging.Level
 	}
+	if fc.YouTube.POTMode != "" {
+		cfg.YouTubePOTMode = fc.YouTube.POTMode
+	}
+	if fc.YouTube.POTURL != "" {
+		cfg.YouTubePOTURL = fc.YouTube.POTURL
+	}
+	if fc.YouTube.POTPort != 0 {
+		cfg.YouTubePOTPort = fc.YouTube.POTPort
+	}
+	if fc.YouTube.POTServerDir != "" {
+		cfg.YouTubePOTServerDir = fc.YouTube.POTServerDir
+	}
+	if fc.YouTube.CookiesFromBrowser != "" {
+		cfg.YouTubeCookiesFromBrowser = fc.YouTube.CookiesFromBrowser
+	}
 	return nil
 }
 
@@ -227,6 +259,23 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("LSV_LOGGING_LEVEL"); v != "" {
 		cfg.LoggingLevel = v
 	}
+	if v := os.Getenv("LSV_YOUTUBE_POT_MODE"); v != "" {
+		cfg.YouTubePOTMode = v
+	}
+	if v := os.Getenv("LSV_YOUTUBE_POT_URL"); v != "" {
+		cfg.YouTubePOTURL = v
+	}
+	if v := os.Getenv("LSV_YOUTUBE_POT_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.YouTubePOTPort = n
+		}
+	}
+	if v := os.Getenv("LSV_YOUTUBE_POT_SERVER_DIR"); v != "" {
+		cfg.YouTubePOTServerDir = v
+	}
+	if v := os.Getenv("LSV_YOUTUBE_COOKIES_FROM_BROWSER"); v != "" {
+		cfg.YouTubeCookiesFromBrowser = v
+	}
 }
 
 func parseBool(v string) bool {
@@ -248,6 +297,9 @@ func (c *Config) EnsureDirs() error {
 	}
 	if err := os.MkdirAll(filepath.Join(c.DataDir, "thumbnails"), 0o755); err != nil {
 		return fmt.Errorf("thumbnails dir: %w", err)
+	}
+	if err := os.MkdirAll(c.SecretsDir(), 0o700); err != nil {
+		return fmt.Errorf("secrets dir: %w", err)
 	}
 	if dir := filepath.Dir(c.DatabasePath); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -280,6 +332,11 @@ func (c *Config) ResolveJWTSecret() (string, error) {
 	}
 	c.JWTSecret = s
 	return s, nil
+}
+
+// SecretsDir is the 0700 directory for host secrets that must never go in SQLite.
+func (c *Config) SecretsDir() string {
+	return filepath.Join(c.DataDir, "secrets")
 }
 
 // Addr returns the HTTP listen address.

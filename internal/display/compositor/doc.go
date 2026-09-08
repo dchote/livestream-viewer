@@ -1,2 +1,2 @@
-// Package compositor will assemble scenes from layout geometry. Not implemented in this scaffold.
+// Package compositor assembles scenes from layout geometry without touching SDL.
 package compositor

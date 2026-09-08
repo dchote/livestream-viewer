@@ -1,13 +1,13 @@
 # Concurrent State Pattern
 
-> **Status:** Command and state channels are implemented by the headless `schedule.Runtime` (no SDL). Frame slots and the render-thread engine remain design until the display stage.
+> **Status:** Implemented. Frame slots, ingest workers, and the render-thread engine exchange state through atomics and a bounded command channel.
 
 Three kinds of thread coexist in this process and each has different rules. Getting the boundaries right is what keeps the render loop non-blocking and the control plane ordinary.
 
 | Thread kind | Count | Pinned | May block? | May call SDL? | May touch the DB? |
 |-------------|-------|--------|-----------|---------------|-------------------|
 | Render thread | 1 (main) | Yes, for process lifetime | **Never** | **Only this one** | Never |
-| Decode workers | 1 per active source | Yes, per worker | Yes | Never | Never |
+| Decode workers | 1 per needed source | Yes, per worker | Yes | Never | Never |
 | Control plane | Many goroutines | No | Yes | Never | Yes |
 
 Everything else in this document is about the three channels of communication between them.
@@ -99,40 +99,45 @@ Because the struct is replaced rather than mutated, any reader gets a consistent
 
 The highest-frequency handoff, and the one that most needs to avoid locks.
 
-Each source owns a **frame slot**: a triple-buffered, lock-free, single-producer/single-consumer handoff.
+Each source owns a **frame slot**: a bounded single-producer/single-consumer presentation queue.
 
 ```
-buffers: [3]*Frame
+pool:  [8]*Frame          // queue depth 6, plus the one being filled and the one being read
+queue: up to 6 indices, oldest first
 
-producer (decoder):  write into the free buffer, then atomically publish it as "newest"
-consumer (renderer): atomically take "newest"; the one it took becomes the new free buffer
+producer (decoder):  copy into a free buffer, append it to the queue,
+                     evicting the oldest entry when the queue is full
+consumer (renderer): peek the oldest frame's PTS, advance past everything
+                     already due, present the last one it passed
 ```
 
-Three buffers is the minimum that guarantees the producer always has somewhere to write without waiting for the consumer: one being read, one just published, one free.
+The pool is sized so a free buffer always exists: at most six frames queued, one held by the consumer, one being filled.
 
-### No Queue, Deliberately
+### Bounded, Deliberately
 
-There is no ring buffer of pending frames and there will not be one. A queue lets the renderer fall behind and never catch up, and it converts a transient decode stall into permanent added latency. Dropping old frames is correct for a viewer: freshness beats completeness, and nobody watching a camera wall wants to see a frame from four seconds ago because the decoder briefly stuttered.
+The bound is the important half. A queue that can grow lets the renderer fall behind and never catch up, and converts a transient decode stall into permanent added latency. Evicting the oldest frame keeps that from happening: freshness beats completeness, and nobody watching a camera wall wants a frame from four seconds ago because the decoder briefly stuttered.
 
-The slot also gives the renderer a hard guarantee it can rely on: sampling a frame is a single atomic load and can never block, whatever the decoder is doing.
+The depth is the other half, and it exists for one reason: **a newest-only handoff cannot express "not yet"**. The renderer schedules presentation against the display clock, so it needs to hold a frame that has arrived but is not due. With a single newest slot, a frame arriving a millisecond early is overwritten by its successor before the refresh it belonged to — a silent drop that is invisible on a fixed camera and reads as judder on anything that moves. Six frames is roughly 200 ms at 30 fps, well inside the latency budget and far short of anything that could accumulate.
+
+The renderer keeps its hard guarantee: the slot's mutex covers index bookkeeping only and is never held across a frame copy, so neither side ever waits on the other for longer than a few comparisons.
 
 ### Frame Ownership
 
 ```go
 type Frame struct {
     Width, Height int
-    Format        Format      // NV12 today; DRMPrime reserved for zero-copy
-    Planes        [][]byte    // Y, UV
+    Format        Format      // NV12 or I420; DRMPrime reserved for DMA-BUF
+    Planes        [][]byte    // Y, UV or Y, U, V
     Strides       []int
     PTS           time.Duration
     Received      time.Time
 }
 ```
 
-- Buffers are **pooled per source** and sized on the first frame. A resolution change reallocates the pool.
-- The decoder owns a buffer until it publishes it; after publishing it must not touch it again.
-- The renderer owns whatever it took until its next sample.
-- `AVFrame` and `AVPacket` are unreferenced immediately after their contents are copied into a pooled buffer. Every allocation site pairs with a `defer`; leaked libav references are invisible until the process is out of memory.
+- The slot owns a pool of eight buffers (queue depth 6, plus the one being filled and the one being read) and sizes them on the first frame. A resolution or format change resizes them in place.
+- The decoder writes packed pixels into the reserved pool buffer. Nothing on the ingest publish path allocates or copies a second time in steady state — at frame rate, across several cameras, an extra full-frame copy is the difference between a quiet bus and hundreds of megabytes per second of churn.
+- The renderer owns whatever it took until its next sample; the frame it holds borrows the slot's buffer and must not be retained.
+- `AVFrame` and `AVPacket` are unreferenced immediately after their contents are copied. Every allocation site pairs with a `defer`, and the `defer` goes *before* the fallible call — a failed hardware transfer can still leave buffers attached. Leaked libav references are invisible until the process is out of memory.
 
 ## Source Lifecycle
 
@@ -150,7 +155,7 @@ control plane: user disables or deletes a source
   → send SourceLost{SourceID} to the engine
   → engine unbinds the slot and releases the texture
   → only then cancel the worker's context and wait for it to exit
-  → release the frame pool
+  → release the slot's buffers
 ```
 
 The ordering matters: the engine unbinds **before** the worker is torn down, so the renderer can never sample a slot whose buffers are being freed.
@@ -163,14 +168,15 @@ Worker shutdown is `context.Context` cancellation plus a `sync.WaitGroup`. Becau
 2. **The engine never performs I/O.** No database, no network, no filesystem, no subprocess.
 3. **Commands carry immutable values.** Never a pointer to something the sender will keep mutating.
 4. **Published state is replaced, not mutated.** Always build a new struct and `Store` it.
-5. **Frame slots hold the newest frame only.** No queues.
+5. **Frame slots queue a bounded handful of frames and evict the oldest when full.** Never unbounded, never blocking the producer, never holding the slot's mutex across a copy.
 6. **Every worker is pinned and every pinned worker unlocks on exit.**
 7. **Every libav allocation has a matching unref**, established at the allocation site with `defer`.
 8. **Unbind before teardown.** The engine releases its reference to a slot before the worker owning it is cancelled.
 
 ## Testing
 
-- **Frame slot** — Concurrent producer/consumer under `-race`, asserting no torn frames and that the consumer always sees a monotonically non-decreasing PTS.
+- **Frame slot** — Concurrent producer/consumer under `-race`, asserting no torn frames, a monotonically non-decreasing PTS at the consumer, eviction of the oldest frame when the queue fills, and that the producer never reuses the buffer the consumer is holding.
+- **Presentation clock** — A simulated source and display, asserting that 30 fps on 60 Hz holds every frame for exactly two refreshes despite jittered publish times, that uneven ratios stay on a repeating pattern, and that a stall re-anchors instead of replaying its backlog.
 - **Engine command handling** — Drive the engine's `apply` directly with a fake clock; no SDL needed.
 - **Source lifecycle** — Start and stop workers against a synthetic source, asserting clean shutdown and no leaked goroutines (`goleak`).
 

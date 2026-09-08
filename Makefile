@@ -3,7 +3,13 @@
 GO_PKGS = ./cmd/... ./internal/... ./api/...
 GO_FILES = $(shell find . -name '*.go' -not -path './frontend/node_modules/*' -not -path './research/*')
 
-.PHONY: frontend build build-server test vet fmt fmt-check check
+ifneq (,$(wildcard scripts/dev-env.sh))
+  -include /dev/null
+endif
+
+.PHONY: frontend build build-server test vet fmt fmt-check check build-deb
+
+export CGO_ENABLED=1
 
 fmt:
 	gofmt -w $(GO_FILES)
@@ -13,10 +19,10 @@ fmt-check:
 	if [ -n "$$unformatted" ]; then echo "gofmt needed for:"; echo "$$unformatted"; exit 1; fi
 
 vet:
-	go vet $(GO_PKGS)
+	@if [ -f scripts/dev-env.sh ]; then . scripts/dev-env.sh; fi; go vet $(GO_PKGS)
 
 test:
-	CGO_ENABLED=1 go test -timeout=30s $(GO_PKGS)
+	@if [ -f scripts/dev-env.sh ]; then . scripts/dev-env.sh; fi; go test -timeout=30s $(GO_PKGS)
 
 check: fmt-check vet test
 
@@ -30,3 +36,6 @@ build-server:
 
 build:
 	./scripts/build.sh
+
+build-deb:
+	./scripts/build-deb.sh

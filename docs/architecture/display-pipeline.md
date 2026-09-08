@@ -1,6 +1,6 @@
 # Display Pipeline
 
-> **Status:** Design. Not yet implemented.
+> **Status:** Implemented. The display engine composites `strategy.Snapshot` onto an SDL3 window (or KMSDRM when that driver is selected). Linux panel verification is still deferred.
 
 This document covers everything from a decoded frame to a lit pixel: SDL3 initialisation, the Linux KMS/DRM path for headless panels, windowed output on desktop hosts, texture management, compositing, transitions, and presentation. Raspberry Pi and other embedded boards are called out where their DRM or Mesa behaviour differs from a generic Linux workstation.
 
@@ -83,13 +83,13 @@ If any step fails, the display plane reports the failure through the engine stat
 
 ### Texture Format
 
-Decoded frames arrive as **NV12**: one full-resolution Y plane and one half-resolution interleaved UV plane. Each source owns one streaming texture:
+Decoded frames arrive as **NV12** (hardware download and remaining conversions) or **I420** (software 4:2:0). Each source owns one streaming texture in the matching SDL format (`SDL_PIXELFORMAT_NV12` or `SDL_PIXELFORMAT_IYUV`):
 
 ```
-SDL_CreateTexture(renderer, SDL_PIXELFORMAT_NV12, SDL_TEXTUREACCESS_STREAMING, w, h)
+SDL_CreateTexture(renderer, format, SDL_TEXTUREACCESS_STREAMING, w, h)
 ```
 
-Upload with **`SDL_UpdateNVTexture`**, which takes the Y and UV planes with independent pitches. This matters: an `AVFrame`'s `linesize[]` almost never equals its width, so the planes are not a contiguous block and plain `SDL_UpdateTexture` cannot be used. The [SDL wiki](https://wiki.libsdl.org/SDL3/SDL_UpdateNVTexture) is explicit about this.
+Upload with **`SDL_UpdateNVTexture`** or **`SDL_UpdateYUVTexture`**, which take planes with independent pitches. Decoder `linesize[]` almost never equals width, so ingest packs to stride=width before the slot; the GPU then sees tight rows. Plain `SDL_UpdateTexture` cannot be used for either layout. The [SDL wiki](https://wiki.libsdl.org/SDL3/SDL_UpdateNVTexture) is explicit about this.
 
 **Colorspace must be set explicitly.** YUV textures default to `SDL_COLORSPACE_JPEG` (full-range BT.601). Typical camera and streaming video is limited-range BT.709, so create the texture with `SDL_CreateTextureWithProperties` and pass `SDL_PROP_TEXTURE_CREATE_COLORSPACE_NUMBER` derived from the stream's reported colorspace. Getting this wrong produces washed-out or over-saturated video that is easy to miss and hard to diagnose later.
 
@@ -97,9 +97,11 @@ Upload with **`SDL_UpdateNVTexture`**, which takes the Y and UV planes with inde
 
 ### Texture Lifecycle
 
-Textures are cached per source and keyed by `(source_id, width, height, format)`. A resolution change — which happens on adaptive HLS streams — destroys and recreates the texture. Because that is a visible hitch, the cache holds the old texture for one extra frame and crossfades if the change is small.
+The cache holds **exactly one texture per source**, tagged with the geometry and colorspace it was created for. A resolution or colorspace change — which happens on adaptive HLS streams — destroys the old texture and creates a replacement under the same source ID.
 
-Textures for sources that are no longer visible are released after a grace period rather than immediately, so stepping back to the previous screen in a tour does not pay for reallocation.
+That "one per source" rule is the important part. An earlier version keyed the map on `(source_id, width, height, format, colorspace, range)`, so every geometry a stream ever used left a texture behind for the life of the process, and the lookup returned whichever entry map iteration reached first — which after a resolution change could be the stale one, drawn at the wrong size.
+
+Textures stay bound for every pre-rolled source, not only the tiles on the active screen. They are released on Unbind when the source is no longer in the strategy (or is disabled). Reconnects keep the last uploaded frame so the tile does not go black while libav re-opens the stream.
 
 ## Compositing
 
@@ -146,11 +148,13 @@ present
 
 ### Implementation Families
 
-**Alpha** — `fade`. `SDL_SetTextureBlendMode(BLENDMODE_BLEND)` plus `SDL_SetTextureAlphaModFloat` on the incoming layer. `fadeToColor` and `fadeFromColor` insert a solid-colour fill and run the progress in two halves.
+**Alpha** — `fade`. `SDL_SetTextureBlendMode(BLENDMODE_BLEND)` plus `SDL_SetTextureAlphaModFloat` on the incoming layer. `fadeToColor` dips through a solid colour in two halves, showing the outgoing screen on the way down and the incoming on the way up. `fadeFromColor` is the distinct SMIL variant: the frame starts on the colour and the incoming rises out of it, with the outgoing screen never shown.
 
 **Geometric** — `pushWipe`, `slideWipe`, `barWipe`, `boxWipe`, `barnDoorWipe`. Pure destination-rect and clip-rect arithmetic; no shader, no mask. `push` translates both layers (the outgoing one is shoved off-screen); `slide` translates only the incoming layer over a stationary outgoing one. These are frequently confused by vendors, so the distinction is defined explicitly in the [Glossary](../reference/glossary.md) and enforced by the implementation.
 
-**Masked** — `irisWipe`, `ellipseWipe`, `clockWipe`. These need a per-pixel alpha mask that geometric clipping cannot express. Implemented with a fragment shader through `SDL_CreateGPURenderer` / `SDL_SetGPURenderState`. Where the GPU renderer is unavailable, these degrade to `fade` and the degradation is reported in the engine state so the UI can show it.
+**Masked** — `irisWipe`, `ellipseWipe`, `clockWipe`. **Withdrawn from the catalogue; not implemented.** These need a per-pixel alpha mask that geometric clipping cannot express, which means a fragment shader through `SDL_CreateGPURenderer` / `SDL_SetGPURenderState`. That was never written: the code advertised them, then drew a plain crossfade. Rather than keep offering effects that do not exist, they are gone from `GET /api/v1/transitions` and rejected by validation. Screens saved with them are migrated to `fade` on startup, and until they are, they render as a crossfade and report `masked_wipe_fade` in the engine's degradation list.
+
+Reinstating them is a self-contained piece of work: add the shader, put the three types back in `Catalogue()`, and the existing tests will start requiring real implementations for each subtype.
 
 ### Progress and Easing
 
@@ -169,13 +173,42 @@ Every transition implementation is a pure function of `t` and is unit-tested by 
 
 `SDL_RenderPresent` with vsync enabled paces the loop. There is no separate frame timer and no sleep loop.
 
-**The display clock drives presentation, not the stream clock.** Each visible source is sampled for its newest available frame at each vsync. With no audio there is nothing to synchronise against, so:
+### Presentation timing
 
-- A 25 fps stream on a 60 Hz output repeats frames. This is correct and requires no logic.
-- A 60 fps stream on a 60 Hz output presents roughly one frame each. Occasional duplicates or drops are invisible.
-- A stalled stream holds its last frame until the offline grace period expires, then shows a placeholder.
+The loop runs on the display's clock, but *which* frame it shows is decided on the stream's. Each source carries a **presentation clock** that anchors its media timeline (PTS) to the wall clock. At each pass the renderer asks that clock which queued frame belongs on screen at the *next* refresh, discards anything older, and reuses the existing texture when nothing new is due.
 
-Different sources at different frame rates coexist with no special handling, because each tile independently samples its own newest frame.
+The alternative — show whatever is newest at each vsync — was what shipped first, and it is wrong in a way that takes a while to notice. The decoder's clock and the panel's clock are unrelated, so the interval between "frame becomes newest" and "renderer looks" drifts continuously. A 30 fps source on a 60 Hz output holds for two refreshes, then three, then two, and loses a frame entirely whenever two publishes land inside one refresh. On a fixed camera this is genuinely invisible: a repeated or missing frame is the same pixels. Point the camera at something moving and it reads as judder, which is why it surfaced on a YouTube livestream and never on the RTSP wall.
+
+With media time driving the choice, the mapping is linear and the cadence follows from the ratio:
+
+- 30 fps on 60 Hz holds every frame for exactly two refreshes.
+- 25 fps on 60 Hz alternates two and three in a fixed repeating pattern rather than wandering.
+- 60 fps on 60 Hz presents one for one.
+- A stalled or reconnecting stream holds its last frame for as long as the source is still needed. The placeholder appears only when there has never been a frame, or after the source is unbound.
+
+Different sources at different frame rates coexist with no special handling, because each tile has its own clock.
+
+Three details make it hold up:
+
+- **Lead.** The clock anchors 50 ms behind the arriving stream. Without that the renderer presents each frame the moment it is decoded, the queue never has anything in it, and the decode thread's timer jitter lands straight on the screen.
+- **Slew.** Encoder and panel clocks differ by tens of parts per million, which left alone accumulates into a dropped or starved frame. The anchor is nudged by a millisecond per refresh when the queue strays from its working depth, spreading the correction below the threshold of visibility.
+- **Resync.** A reconnect, a file loop, or a stall long enough that the anchor no longer describes the stream drains the queue and re-anchors at the newest frame, rather than replaying a backlog at once.
+
+The refresh interval comes from `SDL_GetCurrentDisplayMode`, re-read once a second so that dragging the window to a different panel is picked up. Timing the render loop instead would fold our own overruns into the estimate, and an engine that fell behind would conclude the panel had slowed down and start scheduling against a refresh that does not exist. Loop timing is kept only as a fallback for drivers that report no mode, and the rational `RefreshRateNumerator/Denominator` form is preferred so 59.94 Hz does not accumulate error.
+
+### A grid of mixed frame rates
+
+The clocks are per source and deliberately independent. There is no common timebase between a YouTube stream and an RTSP camera — separate encoders, separate network paths, separate drift — and genlocking them would mean dropping or repeating frames on every source but one. Each tile therefore runs on its own clock, and the display is the master only for *presentation*. A 60 Hz wall showing 60, 30, 25 and 15 fps tiles gives each of them its own stable cadence: 1:1, 2:2, a fixed 2/3 pattern, and 4:4.
+
+What the sources *do* share is the render pass, and that is where a grid can bite:
+
+- **Convergent uploads.** Nothing stops several sources falling due on the same refresh. Nine 1080p tiles landing together is ~28 MB of texture upload in one iteration and near-zero on the next; if the heavy iteration overruns, the loop misses a vblank and *every* tile hitches at once — far more noticeable than any single stream's timing. Each source is therefore anchored one refresh further along than the last, cycling every four, which spreads the work without any source having to wait.
+- **Per-frame cost.** Steady state draws straight to the backbuffer. Composing through two offscreen render targets — needed only to blend a transition, or to give the preview something to downscale — costs three full-screen writes per frame instead of one, and that headroom is what decides whether a full wall holds the refresh.
+- **Missed vblanks are reported.** A loop period more than 1.5× the refresh interval counts as a dropped frame in the display state, so a wall that is GPU-bound shows up as a number rather than as a vague complaint about smoothness.
+
+### Tearing
+
+Tearing is prevented structurally, not by timing. `SDL_RenderPresent` with vsync flips at vblank, and every texture upload for a pass happens before any draw call in that pass, so no tile can be presented half-old and half-new. The one real risk is vsync being silently refused — `SDL_SetRenderVSync` can fail on some drivers — so its result is checked at startup and surfaced as a `vsync_unavailable` degradation rather than left to be discovered as an unexplained visual fault.
 
 ## Failure Modes
 
@@ -183,10 +216,11 @@ Different sources at different frame rates coexist with no special handling, bec
 |---------|-----------|
 | SDL fails to initialise | Display plane reports the error; API and UI continue serving so the user can diagnose |
 | No DRM master available | Explicit error naming the likely cause (another DRM client, missing `vc4-kms-v3d`, group membership) |
-| GPU renderer unavailable | Masked transitions degrade to `fade`; reported in engine state |
+| A withdrawn masked transition is still stored | Renders as `fade`; reported as `masked_wipe_fade` in engine state and migrated on next startup |
 | Texture allocation fails | Tile shows a placeholder card; other tiles continue |
-| Source has no new frames | Hold last frame for the grace period, then swap to an offline placeholder |
-| Source resolution changes | Recreate texture, brief crossfade from the held frame |
+| Source has no new frames | Hold last frame while the source is still needed |
+| Source resolution changes | Destroy and recreate that source's single texture |
+| Render loop panics | Recovered; the error is published to the control plane and the process shuts down deliberately rather than crashing |
 | Render loop overruns vsync | Frames drop naturally; transition progress stays wall-clock correct |
 
 Nothing in this list stops the render loop. A wall that freezes is worse than a wall showing one placeholder tile.
@@ -201,6 +235,7 @@ SDL's own [`test/testffmpeg.c`](https://github.com/libsdl-org/SDL/blob/main/test
 
 - [SDL3 wiki](https://wiki.libsdl.org/SDL3/)
 - [`SDL_UpdateNVTexture`](https://wiki.libsdl.org/SDL3/SDL_UpdateNVTexture)
+- [`SDL_UpdateYUVTexture`](https://wiki.libsdl.org/SDL3/SDL_UpdateYUVTexture)
 - [`SDL_SetRenderTarget`](https://wiki.libsdl.org/SDL3/SDL_SetRenderTarget)
 - [`SDL_HINT_KMSDRM_REQUIRE_DRM_MASTER`](https://wiki.libsdl.org/SDL3/SDL_HINT_KMSDRM_REQUIRE_DRM_MASTER)
 - [SDL 3.4.0 release notes](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.0)
