@@ -93,6 +93,11 @@ RUN deno install --allow-scripts=npm:canvas --frozen
 FROM golang:${GO_VERSION}-bookworm AS backend
 ARG BUILD_VERSION=dev
 ARG BUILD_COMMIT=unknown
+# FFmpeg was built with VA-API/DRM/V4L2/SRT/OpenSSL; cgo must link those too.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev libdrm-dev libva-dev libv4l-dev libsrt-openssl-dev \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY --from=ffmpeg /opt/ffmpeg-8 /opt/ffmpeg-8
 ENV PKG_CONFIG_PATH=/opt/ffmpeg-8/lib/pkgconfig \
