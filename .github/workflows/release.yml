@@ -190,6 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -200,6 +201,7 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+          pattern: release-*
 
       - name: List artifacts
         run: find artifacts -type f | sort
