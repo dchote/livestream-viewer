@@ -257,7 +257,7 @@ jobs:
 
             Add-on image: `ghcr.io/dchote/{arch}-addon-livestream-viewer:dev`
           files: |
-            artifacts/*.deb
+            artifacts/dist/*.deb
             artifacts/livestream-viewer_linux_amd64
             artifacts/livestream-viewer_linux_arm64
         env:
@@ -272,7 +272,7 @@ jobs:
           overwrite_files: true
           fail_on_unmatched_files: true
           files: |
-            artifacts/*.deb
+            artifacts/dist/*.deb
             artifacts/livestream-viewer_linux_amd64
             artifacts/livestream-viewer_linux_arm64
         env:
