@@ -426,7 +426,7 @@ Two-tier, matching go-mumble-server.
 | `http.bind` | Bind address |
 | `display.enabled` | Start the display engine at all (false for API-only/development) |
 | `display.driver` | SDL video driver override (`kmsdrm`, `wayland`, `x11`, `cocoa`) |
-| `display.device` | DRM device index when multiple are present |
+| `display.device` | Pin a KMSDRM card index. Omit it (or set `-1`) to let SDL scan for the card with a connected panel; pinning skips that scan |
 | `logging.level` | `debug`, `info`, `warn`, `error` |
 | `youtube.pot_mode` | PO token provider: `auto` (default; managed, else a sidecar answering `/ping`, else off), `managed`, `external`, `off` |
 | `youtube.pot_url` | External provider URL |

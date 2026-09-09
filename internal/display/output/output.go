@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"strconv"
@@ -37,6 +38,8 @@ type Output struct {
 // Config selects the video driver and initial window size.
 type Config struct {
 	Driver string
+	// Device pins a KMSDRM card index. Negative means let SDL scan for the
+	// card that has a connected panel; see Init.
 	Device int
 	Width  int
 	Height int
@@ -98,12 +101,27 @@ func Init(cfg Config) (*Output, error) {
 		_ = sdl.SetHint(sdl.HINT_VIDEO_DRIVER, driver)
 	}
 	if driver == "kmsdrm" {
+		for _, card := range DRMCards() {
+			slog.Info("drm card", "index", card.Index, "openable", card.Openable,
+				"connected", card.Connected(), "connectors", card.Connectors)
+		}
 		_ = sdl.SetHint(sdl.HINT_RENDER_DRIVER, "opengles2")
-		_ = sdl.SetHint("SDL_KMSDRM_DEVICE_INDEX", strconv.Itoa(cfg.Device))
-		_ = sdl.SetHint("SDL_VIDEODRIVER", "kmsdrm") // ignored by SDL3; logged for operators grepping env
+		// Setting SDL_KMSDRM_DEVICE_INDEX makes SDL take the index verbatim and
+		// skip its own scan for a card with a connected panel. On boards where
+		// card0 is a render-only node (a Pi's v3d, with vc4 on card1) pinning it
+		// fails with "error getting KMSDRM displays information". Only pin when
+		// an operator asked for a specific card.
+		if cfg.Device >= 0 {
+			_ = sdl.SetHint("SDL_KMSDRM_DEVICE_INDEX", strconv.Itoa(cfg.Device))
+		}
 	}
 
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
+		if driver == "kmsdrm" {
+			if diag := DRMDiagnostic(cfg.Device); diag != "" {
+				return nil, fmt.Errorf("sdl init: %w (%s)", err, diag)
+			}
+		}
 		return nil, fmt.Errorf("sdl init: %w", err)
 	}
 

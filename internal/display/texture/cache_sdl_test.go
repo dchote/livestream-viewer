@@ -26,7 +26,7 @@ func nv12(w, h int, rng string) *frame.Frame {
 // source's texture, not accumulate one per geometry, or it leaks for the life
 // of the process and Get can return a stale-sized texture.
 func TestCacheReplacesTextureOnGeometryChange(t *testing.T) {
-	out, err := output.Init(output.Config{Width: 320, Height: 180, Title: "lsv-texcache-test"})
+	out, err := output.Init(output.Config{Device: -1, Width: 320, Height: 180, Title: "lsv-texcache-test"})
 	if err != nil {
 		t.Skip(err)
 	}
@@ -85,7 +85,7 @@ func i420(w, h int) *frame.Frame {
 }
 
 func TestCacheUploadsI420(t *testing.T) {
-	out, err := output.Init(output.Config{Width: 320, Height: 180, Title: "lsv-texcache-i420"})
+	out, err := output.Init(output.Config{Device: -1, Width: 320, Height: 180, Title: "lsv-texcache-i420"})
 	if err != nil {
 		t.Skip(err)
 	}
@@ -111,7 +111,7 @@ func TestCacheUploadsI420(t *testing.T) {
 }
 
 func TestCacheIsolatesSources(t *testing.T) {
-	out, err := output.Init(output.Config{Width: 320, Height: 180, Title: "lsv-texcache-test2"})
+	out, err := output.Init(output.Config{Device: -1, Width: 320, Height: 180, Title: "lsv-texcache-test2"})
 	if err != nil {
 		t.Skip(err)
 	}

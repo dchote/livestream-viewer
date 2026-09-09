@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Stop pinning KMSDRM to `card0`. Setting `SDL_KMSDRM_DEVICE_INDEX` makes SDL skip its scan for the card with a connected panel, so on boards whose `card0` is a render-only node the display engine failed with `error getting KMSDRM displays information`. `display.device` now defaults to auto-detect.
+- Report the `/dev/dri` card and connector inventory on startup, and include it in the SDL init error so a missing device, an unplugged panel, and a held DRM master are distinguishable.
+
 ## 0.1.2
 
 - Keep Debian `/usr/sbin` on `PATH` so the base image timezone service can find `dpkg-reconfigure` (exit 127 under 8WI Supervisor).

@@ -7,7 +7,7 @@ import (
 )
 
 func TestInitWindowed(t *testing.T) {
-	out, err := Init(Config{Width: 320, Height: 180, Title: "lsv-sdl-test"})
+	out, err := Init(Config{Device: -1, Width: 320, Height: 180, Title: "lsv-sdl-test"})
 	if err != nil {
 		t.Skip(err)
 	}

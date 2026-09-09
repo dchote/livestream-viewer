@@ -14,6 +14,39 @@ func TestDefaults(t *testing.T) {
 	if cfg.DisplayEnabled {
 		t.Fatal("display should be disabled by default")
 	}
+	if cfg.DisplayDevice != -1 {
+		t.Fatalf("display device = %d, want -1 (auto)", cfg.DisplayDevice)
+	}
+}
+
+// A [display] section without a device key must stay auto-detect. Pinning card0
+// makes SDL skip its scan for the card that has a connected panel, which fails
+// outright on boards whose card0 is render-only.
+func TestDisplayDeviceStaysAutoWithoutKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.toml")
+	if err := os.WriteFile(path, []byte("[display]\nenabled = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DisplayDevice != -1 {
+		t.Fatalf("display device = %d, want -1 (auto)", cfg.DisplayDevice)
+	}
+
+	path2 := filepath.Join(dir, "pinned.toml")
+	if err := os.WriteFile(path2, []byte("[display]\ndevice = 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := Load(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinned.DisplayDevice != 0 {
+		t.Fatalf("explicit device = %d, want 0", pinned.DisplayDevice)
+	}
 }
 
 func TestTOMLOverridesDefaults(t *testing.T) {

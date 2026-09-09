@@ -146,6 +146,15 @@ Install `pkg-config`.
 4. Another client holds DRM master
 5. Event queue not pumped
 
+### `sdl init: error getting KMSDRM displays information`
+
+SDL found no card it could drive. The error now carries a per-card breakdown of
+`/dev/dri` with each connector's status, which separates the three causes:
+`/dev/dri` missing from the container, no connected panel, or a `display.device`
+pinned to the wrong card. Setting `display.device` makes SDL take that index
+verbatim and skip its own scan, so on a board whose `card0` is the render-only
+node (`v3d`, with `vc4` on `card1`) a pin to 0 fails outright. Leave it unset.
+
 ### `hardware accelerator failed to decode picture` (macOS)
 
 VideoToolbox cannot start on a P-frame. Joining live RTSP mid-GOP used to log that line for every picture until the next IDR. Current builds wait for a keyframe, skip `AV_CODEC_FLAG_LOW_DELAY` on hardware opens, and demote residual VT lines. If a camera never produces a hardware frame, probe records `hw_decode: false` and the worker stays on software. See [Hardware Decode](architecture/hardware-decode.md#macos--videotoolbox).

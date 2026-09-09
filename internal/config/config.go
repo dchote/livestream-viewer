@@ -24,7 +24,8 @@ type Config struct {
 	JWTSecret      string
 	DisplayEnabled bool
 	DisplayDriver  string
-	DisplayDevice  int
+	// DisplayDevice pins a KMSDRM card index; -1 (the default) auto-detects.
+	DisplayDevice int
 	LoggingLevel   string
 	FrontendEmbed  bool
 
@@ -58,10 +59,12 @@ type httpSection struct {
 	JWTSecret string `toml:"jwt_secret"`
 }
 
+// Device is a pointer so an absent key stays auto-detect (-1) while an
+// explicit device = 0 still pins card0.
 type displaySection struct {
 	Enabled bool   `toml:"enabled"`
 	Driver  string `toml:"driver"`
-	Device  int    `toml:"device"`
+	Device  *int   `toml:"device"`
 }
 
 type loggingSection struct {
@@ -83,6 +86,7 @@ func defaults() Config {
 		HTTPPort:       8099,
 		HTTPBind:       "0.0.0.0",
 		DisplayEnabled: false,
+		DisplayDevice:  -1, // auto: let SDL pick the card with a connected panel
 		LoggingLevel:   "info",
 		FrontendEmbed:  true,
 		YouTubePOTMode: "auto",
@@ -205,7 +209,9 @@ func loadTOML(path string, cfg *Config) error {
 	if fc.Display.Driver != "" {
 		cfg.DisplayDriver = fc.Display.Driver
 	}
-	cfg.DisplayDevice = fc.Display.Device
+	if fc.Display.Device != nil {
+		cfg.DisplayDevice = *fc.Display.Device
+	}
 	if fc.Logging.Level != "" {
 		cfg.LoggingLevel = fc.Logging.Level
 	}

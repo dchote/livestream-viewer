@@ -1,7 +1,7 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration
 name: livestream-viewer
 description: Native hardware-accelerated livestream viewer and video wall. REST API and web UI for management.
-version: "0.1.2"
+version: "0.1.3"
 slug: livestream-viewer
 url: "https://github.com/dchote/livestream-viewer/tree/main/addon"
 arch:
