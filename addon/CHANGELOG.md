@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Keep Debian `/usr/sbin` on `PATH` so the base image timezone service can find `dpkg-reconfigure` (exit 127 under 8WI Supervisor).
+- Drop the Options `http_port` field; the app always binds 8099 to match ingress and the Network `8099/tcp` mapping.
+
 ## 0.1.1
 
 - Drop the native 8WI `application.yaml`; Home Assistant and 8WI Supervisor both use `config.yaml`.

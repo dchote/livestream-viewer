@@ -18,9 +18,10 @@ Supervisor pulls `ghcr.io/dchote/{arch}-addon-livestream-viewer` tagged with the
 
 ## Configuration
 
-- **HTTP port** — Management UI and API (default 8099). Used by ingress.
 - **Log level** — `debug`, `info`, `warn`, or `error`.
 - **Display engine** — Start the display engine. Requires `/dev/dri` when driving a panel. Leave enabled on a host with an attached display; disable for control-plane-only use.
+
+The process always listens on container port **8099** (`ingress_port`). Supervisor maps that port for **Open Web UI**. The **Network** field is the host mapping of the same port, not a second listen port.
 
 Data (database, uploads, JWT secret) is stored in the add-on’s persistent `/data` directory.
 

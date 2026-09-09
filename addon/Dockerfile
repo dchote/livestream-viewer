@@ -145,15 +145,15 @@ RUN apt-get update \
   && test -e /opt/bgutil-pot/src/main.ts \
   && test -e /opt/sdl3/lib/libSDL3.so.0 \
   && /usr/bin/livestream-viewer --version
+# Prepend FFmpeg; keep debian-base PATH (includes /usr/sbin for dpkg-reconfigure).
 ENV LSV_DATABASE_PATH=/data/livestream-viewer.sqlite \
     LSV_DATA_DIR=/data \
     LSV_HTTP_PORT=8099 \
     LSV_HTTP_BIND=0.0.0.0 \
     LSV_DISPLAY_ENABLED=false \
     LSV_YOUTUBE_POT_SERVER_DIR=/opt/bgutil-pot \
-    PATH="/opt/ffmpeg-8/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="/opt/ffmpeg-8/bin:${PATH}" \
     LD_LIBRARY_PATH=/opt/ffmpeg-8/lib:/opt/sdl3/lib \
     SDL3_LIBRARY=/opt/sdl3/lib/libSDL3.so.0 \
     DENO_DIR=/opt/bgutil-pot/.deno
 EXPOSE 8099
-CMD ["/usr/bin/livestream-viewer", "-display=false"]

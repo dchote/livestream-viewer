@@ -2,15 +2,15 @@
 # shellcheck shell=bash
 set -e
 
-HTTP_PORT="$(bashio::config 'http_port')"
 LOG_LEVEL="$(bashio::config 'log_level')"
 DISPLAY_ENABLED="$(bashio::config 'display_enabled')"
 
-export PATH="/opt/ffmpeg-8/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
+export PATH="/opt/ffmpeg-8/bin:/usr/local/bin:${PATH:-/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin}"
 export LD_LIBRARY_PATH="/opt/ffmpeg-8/lib:/opt/sdl3/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SDL3_LIBRARY="${SDL3_LIBRARY:-/opt/sdl3/lib/libSDL3.so.0}"
 
-export LSV_HTTP_PORT="${HTTP_PORT:-8099}"
+# Container listen port is fixed to match ingress_port / ports 8099/tcp in config.yaml.
+export LSV_HTTP_PORT="${LSV_HTTP_PORT:-8099}"
 export LSV_HTTP_BIND="0.0.0.0"
 export LSV_LOGGING_LEVEL="${LOG_LEVEL:-info}"
 export LSV_DATABASE_PATH="${LSV_DATABASE_PATH:-/data/livestream-viewer.sqlite}"
