@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Drop the native 8WI `application.yaml`; Home Assistant and 8WI Supervisor both use `config.yaml`.
+
 ## 0.1.0
 
 - Control plane, embedded UI, Swagger, and Home Assistant ingress.

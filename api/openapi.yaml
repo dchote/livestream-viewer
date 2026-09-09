@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: livestream-viewer API
-  version: 0.1.0
+  version: 0.1.1
   description: |
     REST API for livestream-viewer. The management UI is a consumer of this API.
     Interactive docs are served at `/docs`.
