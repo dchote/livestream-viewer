@@ -2,7 +2,7 @@
 
 Native hardware-accelerated livestream viewer and video wall. **This is the primary install path.** Use **Open Web UI** to manage sources, screens, and the tour. The REST API and embedded web UI run via Home Assistant ingress.
 
-**8WI Supervisor** discovers `addon/application.yaml` (native schema). Home Assistant still uses `addon/config.yaml`. Do not merge the two: 8wi treats `privileged` as a Docker boolean; Home Assistant uses a capability list.
+**8WI Supervisor** and Home Assistant both use `addon/config.yaml`. Do not add a sibling `application.yaml` (8wi does not merge the two). HA `privileged: [SYS_ADMIN]` is applied as Docker CapAdd.
 
 The image includes FFmpeg 8, SDL3 3.4+ (KMSDRM), and a YouTube stack (`yt-dlp` with EJS, Deno, the BgUtils PO token provider, and the bgutil yt-dlp plugin). `yt-dlp` self-updates when the add-on starts so extractors do not rot between releases.
 
