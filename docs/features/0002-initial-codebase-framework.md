@@ -23,7 +23,7 @@ Carve a runnable **control-plane + management UI shell** out of the [0001 roadma
 
 - SDL3 render loop, go-astiav decode, frame slots, preview MJPEG, real source probing
 - Full LayoutPicker/TileEditor/PlaylistEditor/TourEditor behaviour (pages show section structure + empty states only)
-- DRM verification on HA OS
+- DRM verification on HA OS (later confirmed on Raspberry Pi; see [0001 Stage 7](0001-project-scaffold.md#stage-7--packaging))
 
 **macOS default:** `-display=false`. Do not link `go-sdl3` or `go-astiav` in this pass so Homebrew FFmpeg major version cannot block the framework build. CGO is still used for `mattn/go-sqlite3`.
 

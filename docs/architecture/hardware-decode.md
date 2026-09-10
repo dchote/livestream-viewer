@@ -1,6 +1,6 @@
 # Hardware Decode
 
-> **Status:** Implemented for VideoToolbox (macOS: keyframe wait, no `LOW_DELAY` on hardware, `hwaccel_flags` for profile/level) and best-effort VA-API/DRM/V4L2 enumeration on Linux. Pi capacity numbers remain qualitative.
+> **Status:** Implemented for VideoToolbox (macOS: keyframe wait, no `LOW_DELAY` on hardware, `hwaccel_flags` for profile/level) and best-effort VA-API/DRM/V4L2 enumeration on Linux. The Home Assistant add-on is confirmed working on Raspberry Pi. Pi capacity numbers remain qualitative.
 
 livestream-viewer is platform-agnostic: it probes the host at startup and reports what each codec can do. **This document is the optimisation and capacity-planning guide for constrained Linux hosts**, with Raspberry Pi 4/5 as the primary worked example because their V4L2 surface is unusually sharp-edged. Other SBCs and desktop GPUs follow the same probe → report → fall back pattern; only the device nodes and hwaccel names change.
 

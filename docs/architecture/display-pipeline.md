@@ -1,6 +1,6 @@
 # Display Pipeline
 
-> **Status:** Implemented. The display engine composites `strategy.Snapshot` onto an SDL3 window (or KMSDRM when that driver is selected). Linux panel verification is still deferred.
+> **Status:** Implemented. The display engine composites `strategy.Snapshot` onto an SDL3 window, or onto a KMSDRM panel when that driver is selected. Full-screen panel output is confirmed working on Raspberry Pi as a Home Assistant add-on.
 
 This document covers everything from a decoded frame to a lit pixel: SDL3 initialisation, the Linux KMS/DRM path for headless panels, windowed output on desktop hosts, texture management, compositing, transitions, and presentation. Raspberry Pi and other embedded boards are called out where their DRM or Mesa behaviour differs from a generic Linux workstation.
 
@@ -37,7 +37,7 @@ SDL_Renderer is not a compromise here. As of **SDL 3.4.0** the 2D renderer gaine
 
 ### Headless Linux (KMS/DRM)
 
-Running without a desktop session means SDL talks directly to the kernel's DRM/KMS interface. This is the path used on Raspberry Pi OS Lite and other headless Linux installs with an attached panel.
+Running without a desktop session means SDL talks directly to the kernel's DRM/KMS interface. This is the path used on Raspberry Pi OS Lite, Home Assistant OS, and other headless Linux installs with an attached panel. It is confirmed working on Raspberry Pi when livestream-viewer runs as a Home Assistant add-on.
 
 ```
 SDL_VIDEO_DRIVER=kmsdrm

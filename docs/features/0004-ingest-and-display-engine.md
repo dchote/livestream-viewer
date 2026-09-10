@@ -32,8 +32,9 @@ Finish Stages 1–4 of the roadmap as **production code** (not throwaway spikes)
 **Explicitly deferred**
 
 - Audio, multi-output, zero-copy DMA-BUF
-- Pi capacity numbers and verifying KMSDRM on a real panel (the driver path is still coded)
-- Home Assistant DRM-on-panel verification
+- Pi capacity numbers (qualitative guidance only; see [hardware-decode.md](../architecture/hardware-decode.md))
+
+KMSDRM full-screen panel output and Home Assistant DRM-on-panel access are confirmed working on Raspberry Pi as a Home Assistant add-on.
 
 ## Cross-Cutting Contracts
 

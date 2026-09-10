@@ -1,6 +1,6 @@
 # livestream-viewer user guide
 
-livestream-viewer turns a display connected to a small computer or Home Assistant host into a dedicated video wall. It can show cameras, YouTube livestreams, other web streams, and uploaded video files.
+livestream-viewer turns a display connected to a small computer or Home Assistant host into a dedicated video wall. It can show cameras, YouTube livestreams, other web streams, and uploaded video files. The Home Assistant add-on is confirmed working on Raspberry Pi.
 
 You manage the wall from a web browser. The browser is only the control panel: closing it does not stop the attached display.
 
@@ -33,7 +33,7 @@ You manage the wall from a web browser. The browser is only the control panel: c
 
 You need:
 
-- A host with livestream-viewer installed.
+- A host with livestream-viewer installed. Raspberry Pi running the Home Assistant add-on is a confirmed working host.
 - A display connected to that host if you want physical display output.
 - A computer or tablet that can open the management page.
 - At least one stream address, camera address, or video file.

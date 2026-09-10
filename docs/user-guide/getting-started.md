@@ -1,6 +1,6 @@
 # Get started with livestream-viewer
 
-This guide creates a simple wall with one source and one screen. Installation steps for Home Assistant are in the [add-on README](../../addon/README.md).
+This guide creates a simple wall with one source and one screen. Installation steps for Home Assistant are in the [add-on README](../../addon/README.md). The add-on is confirmed working on Raspberry Pi with an attached display.
 
 ## Open the management page
 

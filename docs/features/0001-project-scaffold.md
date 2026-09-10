@@ -1,8 +1,8 @@
 # 0001: Project Scaffold and Implementation Roadmap
 
-## Status: Implemented (stages 0–4 for windowed hosts)
+## Status: Implemented (stages 0–7; Pi capacity numbers remain qualitative)
 
-Stage 0 and the control-plane / UI / add-on **skeletons** from Stages 5–7 are delivered by [0002](0002-initial-codebase-framework.md). Source and display-strategy editors, the headless scheduler, and SSE landed in [0003](0003-stream-sources-and-display-strategy.md). Ingest, lock-free frames, and the windowed SDL engine landed in [0004](0004-ingest-and-display-engine.md). KMSDRM-on-panel verification and Pi capacity numbers remain deferred.
+Stage 0 and the control-plane / UI / add-on **skeletons** from Stages 5–7 are delivered by [0002](0002-initial-codebase-framework.md). Source and display-strategy editors, the headless scheduler, and SSE landed in [0003](0003-stream-sources-and-display-strategy.md). Ingest, lock-free frames, and the windowed SDL engine landed in [0004](0004-ingest-and-display-engine.md). KMSDRM-on-panel output is confirmed working on Raspberry Pi as a Home Assistant add-on. Pi capacity numbers remain qualitative.
 
 ## Summary
 
@@ -102,7 +102,7 @@ Join the two spikes.
 
 ## Stage 7 — Packaging
 
-**Add-on scaffold and packaging delivered.** Remaining: DRM-on-panel verification on Home Assistant OS.
+**Add-on scaffold, packaging, and Raspberry Pi panel output delivered.** DRM-on-panel output is confirmed working on Raspberry Pi Home Assistant OS.
 
 - GoReleaser is **not** used for CGO cross builds. `.deb` packages are built with **nFPM** (`packaging/nfpm-*.yaml`, `scripts/package-deb.sh`) from binaries extracted out of the add-on image
 - `scripts/build-deb.sh` builds the add-on image, smoke-checks YouTube/FFmpeg/SDL tooling, extracts the runtime, and packages `.deb`s
@@ -112,7 +112,7 @@ Join the two spikes.
 - `.github/workflows/release.yml` — manual `workflow_dispatch` for GHCR images, `.deb`s, and GitHub Releases (stable tags created only after a successful build; rolling `dev` assets wiped each run)
 - Ingress support: `getIngressBase()` in the frontend, `<base href>` injection in the Go SPA handler; `ingress_stream: true` for Preview MJPEG and SSE
 
-**Done when:** the add-on installs from the repository URL on Home Assistant OS, the UI opens through ingress, and — when a panel is attached and DRM access is granted — the display lights up. Image publish is implemented; DRM-master on HA OS remains unverified.
+**Done when:** the add-on installs from the repository URL on Home Assistant OS, the UI opens through ingress, and — when a panel is attached and DRM access is granted — the display lights up. Confirmed on Raspberry Pi Home Assistant OS: the add-on takes DRM master and drives the attached panel.
 
 ## Open Questions
 
@@ -120,7 +120,7 @@ These need answers from the spikes or from a decision before the stages that dep
 
 | Question | Blocks | Notes |
 |----------|--------|-------|
-| Does the Home Assistant add-on sandbox permit taking DRM master? | Stage 7 | Needs `devices: /dev/dri` and probably `video: true`. HA OS runs no desktop, so nothing should be holding it, but this is unverified. |
+| Does the Home Assistant add-on sandbox permit taking DRM master? | Stage 7 | **Yes, confirmed on Raspberry Pi.** `devices: /dev/dri` and `video: true` are sufficient. HA OS runs no desktop, so nothing else holds DRM master when the add-on is the display owner. |
 | Does the Pi's SDL3 GPU renderer support custom fragment shaders? | Masked transitions in Stage 4 | Example of an embedded-Mesa question. If not, `irisWipe`, `ellipseWipe`, and `clockWipe` degrade to `fade` permanently rather than situationally. |
 | How many concurrent decoder instances will constrained SBC hardware blocks accept? | Capacity limits in Stage 3 | Exceeding the limit fails confusingly; we need a hard cap and a clear error. Validate on Raspberry Pi and at least one other target. |
 | Is the Raspberry Pi OS system FFmpeg patched with the V4L2-request hwaccels? | Stage 2, packaging | Pi-specific packaging question. If yes, we avoid shipping the `jc-kynesim` fork for that target. If no, the `.deb` and add-on image must carry it. |

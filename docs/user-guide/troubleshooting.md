@@ -46,7 +46,7 @@ Useful log clues include:
 - A message saying the display device is missing or cannot be opened — the installation does not have access to the host’s display hardware; contact the system owner.
 - A message saying another client may hold the display — stop the other display application or reboot.
 
-The management page can continue working even when physical display output fails.
+The management page can continue working even when physical display output fails. Raspberry Pi running the Home Assistant add-on is a confirmed working configuration; a blank panel on that host is usually a cable, input, power, or competing display-owner problem rather than missing add-on support.
 
 ## The attached display works, but Preview has no video
 

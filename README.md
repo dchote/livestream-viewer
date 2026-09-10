@@ -6,11 +6,11 @@ A dedicated video wall for live streams — cameras, YouTube, and more — rende
 
 New to livestream-viewer? Start with the **[User Guide](docs/user-guide/README.md)** for installation, daily operation, and troubleshooting.
 
-> **Ready to try.** Sources, layouts, tours, live preview, and windowed display output are implemented. Full-screen panel ownership on Linux is coded and awaiting real-hardware verification. See [docs/features/0004-ingest-and-display-engine.md](docs/features/0004-ingest-and-display-engine.md).
+> **Ready to try.** The Home Assistant add-on is confirmed working on Raspberry Pi, including full-screen output to an attached display. Sources, layouts, tours, live preview, and windowed display output are implemented. See [docs/features/0004-ingest-and-display-engine.md](docs/features/0004-ingest-and-display-engine.md).
 
 ## Install (Home Assistant add-on)
 
-This is the primary install path. In Home Assistant: **Settings** → **Add-ons** → **Add-on store** → **Repositories**, add `https://github.com/dchote/livestream-viewer`, then install **livestream-viewer**.
+This is the primary install path, and it is confirmed working on Raspberry Pi. In Home Assistant: **Settings** → **Add-ons** → **Add-on store** → **Repositories**, add `https://github.com/dchote/livestream-viewer`, then install **livestream-viewer**.
 
 Supervisor pulls `ghcr.io/dchote/{arch}-addon-livestream-viewer` matching the add-on version. Those GHCR packages must be public. The image includes FFmpeg 8, SDL3, and YouTube support (`yt-dlp` + Deno). Details: [addon/README.md](addon/README.md).
 
@@ -27,7 +27,7 @@ Pointing Chromium at a dashboard works until you want more than one stream, a cl
 - **One binary** — API, UI, and display engine in a single process. Run it as a service, or install it as a Home Assistant add-on
 - **Honest about hardware** — Each source reports whether it will decode on hardware or in software, so you know what a layout will cost before it drops frames
 
-Works on Linux, macOS, and Windows for management. Display output targets Linux panels and desktop windows; Raspberry Pi and similar boards are first-class optimisation targets, not a hard requirement.
+Works on Linux, macOS, and Windows for management. Display output targets Linux panels and desktop windows. Raspberry Pi running the Home Assistant add-on is a confirmed production host; similar boards are first-class optimisation targets, not a hard requirement.
 
 ## Quick start (development)
 
@@ -72,7 +72,7 @@ The management UI includes a live **Preview** of the composited output, per-tile
 
 ## Built for constrained hosts
 
-On a Raspberry Pi or similar board, decode capacity is often the limiting factor. livestream-viewer probes what the machine can actually do and surfaces it in the UI, so a busy grid tells you the cost up front instead of silently falling over.
+On a Raspberry Pi or similar board, decode capacity is often the limiting factor. The Home Assistant add-on is confirmed working on Raspberry Pi with an attached display. livestream-viewer probes what the machine can actually do and surfaces it in the UI, so a busy grid tells you the cost up front instead of silently falling over.
 
 Platform notes live in [docs/architecture/hardware-decode.md](docs/architecture/hardware-decode.md).
 

@@ -1,10 +1,10 @@
 # Technical Overview
 
-> **Status:** Control plane, ingest, and windowed SDL display engine are implemented. Linux KMSDRM is coded but not verified on a panel.
+> **Status:** Control plane, ingest, and display engine are implemented. Linux KMSDRM full-screen panel output is confirmed working on Raspberry Pi as a Home Assistant add-on. Windowed SDL remains the development path on desktop Linux and macOS.
 
 livestream-viewer is a single Go binary that decodes live video streams with hardware acceleration and composites them onto a physically attached display using SDL3, while serving a Vue 3 + Vuetify management UI and REST API.
 
-It is **platform-agnostic**: the control plane runs on any Go-supported OS; display output targets Linux DRM/KMS for headless panels and a native SDL window on desktop Linux and macOS for development. Low-cost and embedded boards (Raspberry Pi and similar SBCs) are first-class optimisation targets — hardware decode paths, capacity reporting, and packaging — not a hard requirement to build or operate the management plane.
+It is **platform-agnostic**: the control plane runs on any Go-supported OS; display output targets Linux DRM/KMS for headless panels and a native SDL window on desktop Linux and macOS for development. Raspberry Pi running the Home Assistant add-on is a confirmed production host. Low-cost and embedded boards (Raspberry Pi and similar SBCs) remain first-class optimisation targets — hardware decode paths, capacity reporting, and packaging — not a hard requirement to build or operate the management plane.
 
 ## Technology Stack
 

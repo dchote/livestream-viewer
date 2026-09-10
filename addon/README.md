@@ -2,6 +2,8 @@
 
 Turn a display connected to your Home Assistant host into a dedicated video wall for cameras, YouTube livestreams, web streams, and uploaded video files.
 
+The add-on is confirmed working on Raspberry Pi Home Assistant hosts with an attached display.
+
 Use **Open Web UI** to add your video sources, choose what appears on the display, and monitor the wall from another computer or tablet.
 
 ## Installation

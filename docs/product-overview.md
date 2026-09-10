@@ -2,7 +2,7 @@
 
 **livestream-viewer** is a dedicated, always-on video wall: it renders one or more live streams directly to an attached display using hardware-accelerated decoding and GPU compositing, and it is configured entirely from a web interface. There is no browser kiosk and no requirement for a desktop environment — when display output is enabled, the application owns the panel.
 
-**Status: Display engine and control plane implemented** — Sources, display strategy, ingest, SDL compositing, Preview MJPEG, and the Vue editors can be built and run. Use `-display=true` for a windowed SDL surface; `-display=false` keeps the API and scheduler without opening a window.
+**Status: Display engine and control plane implemented** — Sources, display strategy, ingest, SDL compositing, Preview MJPEG, and the Vue editors can be built and run. The Home Assistant add-on is confirmed working on Raspberry Pi, including full-screen KMSDRM output to an attached panel. Use `-display=true` for a windowed SDL surface; `-display=false` keeps the API and scheduler without opening a window.
 
 The project is structured as two cooperating planes inside a single Go binary: a **display engine** that decodes and composites video onto the physical output, and a **control plane** (REST API plus embedded Vue 3 + Vuetify UI) that manages sources, layouts, and scheduling. Like [go-mumble-server](https://github.com/dchote/go-mumble-server), the repository doubles as a Home Assistant add-on repository for one-click install on Home Assistant OS.
 
@@ -16,7 +16,7 @@ livestream-viewer is **platform-agnostic**:
 | **Display output** | Linux DRM/KMS for headless panels; native SDL window on desktop Linux and macOS for development |
 | **Optimised for** | Low-cost and embedded hosts (Raspberry Pi and similar SBCs) — hardware decode when available, honest software-fallback reporting when not |
 
-Raspberry Pi and other constrained boards are important optimisation targets, not a hard dependency. You can develop and operate the management plane without one on the desk.
+Raspberry Pi running the Home Assistant add-on is a confirmed production host. Other constrained boards remain important optimisation targets, not a hard dependency. You can develop and operate the management plane without dedicated hardware on the desk.
 
 ## Motivation
 
@@ -79,11 +79,11 @@ The web UI is a consumer of the REST API, which is equally available for direct 
 
 ## Deployment
 
-**Home Assistant add-on (primary)** — The repository can be added as a Home Assistant add-on repository for one-click install. The management UI is exposed through ingress; on hosts with an attached panel the add-on is granted access to the DRM render nodes so it can drive the display. The published image includes FFmpeg 8, SDL3, and YouTube support.
+**Home Assistant add-on (primary)** — The repository can be added as a Home Assistant add-on repository for one-click install. The management UI is exposed through ingress; on hosts with an attached panel the add-on is granted access to the DRM render nodes so it can drive the display. This path is confirmed working on Raspberry Pi Home Assistant OS. The published image includes FFmpeg 8, SDL3, and YouTube support.
 
 **Standalone** — Linux `.deb` packages and binaries from GitHub Releases, run as a systemd (or equivalent) service. On headless Linux no desktop environment is required; the application can take DRM master directly. YouTube requires host `yt-dlp`. The `.deb` ships Deno and the BgUtils PO token server (`pot_mode = "auto"` starts it); the Go binary embeds the yt-dlp plugin. If YouTube still returns the bot check, upload cookies from a browser that can play the stream.
 
-**Development** — Runs on a normal desktop Linux or macOS workstation. Use `-display=false` for control-plane work; when the engine lands, windowed SDL output supports layout and transition development without dedicated hardware on the desk.
+**Development** — Runs on a normal desktop Linux or macOS workstation. Use `-display=false` for control-plane work; windowed SDL output (`-display=true`) supports layout and transition development without dedicated hardware on the desk.
 
 ## Scope
 

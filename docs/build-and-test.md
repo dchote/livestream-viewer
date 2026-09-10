@@ -48,7 +48,7 @@ Leave `[youtube] pot_mode = "auto"` so the process uses the sidecar when `/ping`
 
 Stock distro packages are not FFmpeg 8. Use `brew install ffmpeg@8` (Homebrew-on-Linux) or build FFmpeg 8 shared libraries into a prefix and export `PKG_CONFIG_PATH`. SDL3 3.4+ is required at runtime for `-display=true`. Build SDL3 from source with `-DSDL_KMSDRM=ON` for headless panels.
 
-CI uses Homebrew-on-Linux to install `ffmpeg@8`. The add-on image compiles FFmpeg 8 and SDL3 in Docker, and ships `yt-dlp`, Deno, and the BgUtils PO token provider for YouTube.
+CI uses Homebrew-on-Linux to install `ffmpeg@8`. The add-on image compiles FFmpeg 8 and SDL3 in Docker, and ships `yt-dlp`, Deno, and the BgUtils PO token provider for YouTube. Running that image as a Home Assistant add-on on Raspberry Pi is the confirmed production path for panel output.
 
 ## Releases
 
@@ -81,7 +81,7 @@ This builds the add-on image per architecture (with a runtime smoke check), extr
 
 ### Headless Linux display configuration (Raspberry Pi example)
 
-On Raspberry Pi OS, add to `/boot/firmware/config.txt`:
+The Home Assistant add-on on Raspberry Pi is the confirmed production path; Home Assistant OS already provides a KMS display stack, so no `config.txt` edits are required for that install. For a standalone Raspberry Pi OS host, add to `/boot/firmware/config.txt`:
 
 ```
 dtoverlay=vc4-kms-v3d
