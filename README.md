@@ -4,6 +4,8 @@ A dedicated video wall for live streams — cameras, YouTube, and more — rende
 
 ![Native display output compositing multiple live streams](images/SDL3-display.png)
 
+New to livestream-viewer? Start with the **[User Guide](docs/user-guide/README.md)** for installation, daily operation, and troubleshooting.
+
 > **Ready to try.** Sources, layouts, tours, live preview, and windowed display output are implemented. Full-screen panel ownership on Linux is coded and awaiting real-hardware verification. See [docs/features/0004-ingest-and-display-engine.md](docs/features/0004-ingest-and-display-engine.md).
 
 ## Install (Home Assistant add-on)
@@ -84,6 +86,7 @@ Details: [docs/build-and-test.md](docs/build-and-test.md).
 
 ## Documentation
 
+- [User Guide](docs/user-guide/README.md) — Setup, operation, and troubleshooting for end users
 - [Product Overview](docs/product-overview.md) — Vision, scope, and features
 - [Technical Overview](docs/technical-overview.md) — Architecture and design decisions
 - [Build and Test](docs/build-and-test.md) — Toolchain, CI, and releases

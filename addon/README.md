@@ -1,10 +1,8 @@
 # livestream-viewer Home Assistant Add-on
 
-Native hardware-accelerated livestream viewer and video wall. **This is the primary install path.** Use **Open Web UI** to manage sources, screens, and the tour. The REST API and embedded web UI run via Home Assistant ingress.
+Turn a display connected to your Home Assistant host into a dedicated video wall for cameras, YouTube livestreams, web streams, and uploaded video files.
 
-**8WI Supervisor** and Home Assistant both use `addon/config.yaml`. Do not add a sibling `application.yaml` (8wi does not merge the two). HA `privileged: [SYS_ADMIN]` is applied as Docker CapAdd.
-
-The image includes FFmpeg 8, SDL3 3.4+ (KMSDRM), and a YouTube stack (`yt-dlp` with EJS, Deno, the BgUtils PO token provider, and the bgutil yt-dlp plugin). `yt-dlp` self-updates when the add-on starts so extractors do not rot between releases.
+Use **Open Web UI** to add your video sources, choose what appears on the display, and monitor the wall from another computer or tablet.
 
 ## Installation
 
@@ -12,59 +10,40 @@ The image includes FFmpeg 8, SDL3 3.4+ (KMSDRM), and a YouTube stack (`yt-dlp` w
 2. Click the three dots (⋮) → **Repositories**.
 3. Add this repository URL: `https://github.com/dchote/livestream-viewer`
 4. Find **livestream-viewer** in the add-on list and click **Install**.
-5. Configure options if needed, then **Start** the add-on.
+5. Leave the default options in place unless you know you need to change them.
+6. Select **Start**, then **Open Web UI**.
+7. Sign in with username `admin` and password `admin`. You will be asked to choose a new password.
 
-Supervisor pulls `ghcr.io/dchote/{arch}-addon-livestream-viewer` tagged with the add-on `version`. Those GHCR packages must be **public** or Home Assistant OS cannot pull them.
+For a wall-mounted installation, connect and turn on the display before starting the add-on.
 
 ## Configuration
 
-- **Log level** — `debug`, `info`, `warn`, or `error`.
-- **Display engine** — Start the display engine. Requires `/dev/dri` when driving a panel. Leave enabled on a host with an attached display; disable for control-plane-only use.
+- **Log level** — Leave this at `info` for normal use. If support asks for more detail, change it to `debug`, restart the add-on, reproduce the problem, and copy the relevant log messages. Change it back to `info` afterward.
+- **Display engine** — Leave this enabled when a display is connected to the Home Assistant host. Disable it only when you want to manage and preview a wall without driving a physical display.
 
-The process always listens on container port **8099** (`ingress_port`). Supervisor maps that port for **Open Web UI**. The **Network** field is the host mapping of the same port, not a second listen port.
+Your settings, uploaded files, and accounts are kept when the add-on restarts or updates. Uninstalling the add-on may remove that data.
 
-Data (database, uploads, JWT secret) is stored in the add-on’s persistent `/data` directory.
+## First steps
 
-Default login after first start: username `admin`, password `admin`. Change this before exposing the UI.
-
-## Web UI (ingress)
-
-Click **Open Web UI** in the add-on panel. Preview, Stream Sources, and Display Strategy are the primary pages.
-
-Preview MJPEG and live events are streamed through ingress. Swagger is at `/docs` on the add-on port.
+1. Open **Stream Sources** and add a camera, livestream, or video file.
+2. Select **Probe** beside the source to check that it can be opened.
+3. Open **Display Strategy** and create a screen.
+4. Assign your source to a tile, then select **Save**.
+5. Add the screen to the **Tour**, turn on **Enabled**, then save the tour.
+6. Open **Preview** to confirm what is being sent to the attached display.
 
 ## YouTube
 
-YouTube sources work with no extra host packages. The image ships `yt-dlp` (with EJS solvers), Deno, the BgUtils PO token provider, and the `bgutil-ytdlp-pot-provider` yt-dlp plugin. On each start the add-on tries `pip install -U yt-dlp bgutil-ytdlp-pot-provider` and continues if that update fails.
+Most public YouTube livestreams work without extra setup. If the Preview page says YouTube needs you to sign in or is treating the device as a bot:
 
-Public livestreams use a local token provider that starts automatically with the add-on. That is not a guarantee: if YouTube still returns the bot check, upload cookies from a browser that can play the stream.
+1. On a computer that can play the stream, export a Netscape-format `cookies.txt` file.
+2. In livestream-viewer, open **Stream Sources**.
+3. In the **YouTube** section, open **Configuration** and upload the file.
 
-Cookies are also required for private, members-only, or age-restricted videos. Export a Netscape `cookies.txt` and upload it under **Stream Sources**. The file is stored in the add-on data volume (`data/secrets/youtube.cookies`) and survives restarts. There is no browser inside the add-on, so `--cookies-from-browser` is not used.
-
-## Local image build
-
-`BUILD_FROM` is **required** (arch-specific Home Assistant debian-base). From the repository root:
-
-```bash
-# amd64
-docker build -f addon/Dockerfile \
-  --build-arg BUILD_FROM=ghcr.io/hassio-addons/debian-base/amd64:9.2.0 \
-  -t livestream-viewer-addon .
-
-# arm64 / aarch64
-docker build -f addon/Dockerfile \
-  --build-arg BUILD_FROM=ghcr.io/hassio-addons/debian-base/aarch64:9.2.0 \
-  -t livestream-viewer-addon .
-
-docker run --rm -p 8099:8099 livestream-viewer-addon
-```
-
-A raw `docker run` is a smoke test (API/UI), not a substitute for Supervisor.
-
-## Forks
-
-If you install from a fork, update `image` in `addon/config.yaml` to your registry, or build and push your own images.
+Private, members-only, and age-restricted videos also require cookies. Use an account with only the access this display needs; automated playback can cause YouTube to restrict an account.
 
 ## Support
 
+- [User guide](../docs/user-guide/README.md)
+- [Troubleshooting](../docs/user-guide/troubleshooting.md)
 - [GitHub repository](https://github.com/dchote/livestream-viewer)
