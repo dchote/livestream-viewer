@@ -96,8 +96,10 @@ Follows the [CSS easing function](https://developer.mozilla.org/en-US/docs/Web/C
 | **SAND** | Broadcom's 128-byte-column-tiled frame format, emitted by the Raspberry Pi hardware decoder. Also seen as "NC12". Must be detiled or handled with DRM format modifiers. See [Hardware Decode](../architecture/hardware-decode.md). |
 | **DMA-BUF** / **DRM PRIME** | Kernel mechanism for sharing GPU buffers between devices without copying. The basis of any zero-copy path. |
 | **Zero-copy** | Keeping a decoded frame in GPU memory from decoder to display, never touching system memory. Possible on the Pi but not through SDL's public API. |
-| **Stateful V4L2 M2M** | Kernel decode API where the driver maintains bitstream state. Pi 4 H.264. FFmpeg's `h264_v4l2m2m`. |
+| **Stateful V4L2 M2M** | Kernel decode API where the driver maintains bitstream state. Pi 4 / CM4 H.264. FFmpeg's `h264_v4l2m2m` (no DRM hwdevice context). |
 | **Stateless V4L2 request** | Kernel decode API where the client supplies per-frame controls and reference lists. Pi HEVC (`rpivid`). Reached through FFmpeg's `drm` hwaccel, **not** through `hevc_v4l2m2m`, which cannot work. |
+| **Force hardware decode** | Source option `force_hardware`. Tries the host hardware path even when a prior probe stored `hw_decode=false`. Mutually exclusive with force software. |
+| **Force software decode** | Source option `force_software`. Skips hardware decode even when the host supports it. |
 | **KMSDRM** | Kernel Mode Setting / Direct Rendering Manager. Lets an application drive the display with no X11, Wayland, or compositor. |
 | **DRM master** | Exclusive control of a display device. Required for KMSDRM output, so nothing else may own the display. |
 | **Frame slot** | Our bounded single-producer/single-consumer handoff between a decoder and the renderer. Queues a few frames so the renderer can schedule presentation, and evicts the oldest when full. |

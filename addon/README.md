@@ -34,6 +34,8 @@ Your settings, uploaded files, and accounts are kept when the add-on restarts or
 5. Add the screen to the **Tour**, turn on **Enabled**, then save the tour.
 6. Open **Preview** to confirm what is being sent to the attached display.
 
+On Raspberry Pi 4 / CM4 hosts, Stream Sources should report an H.264 path of `v4l2m2m` and list V4L2 M2M nodes when the supervisor maps `/dev/video*`. After an update that adds those devices, **Probe** again or turn on **Force hardware decode** if a source is still marked Software from an earlier run.
+
 ## YouTube
 
 Most public YouTube livestreams work without extra setup. If the Preview page says YouTube needs you to sign in or is treating the device as a bot:

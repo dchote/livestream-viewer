@@ -92,7 +92,7 @@ HLS (including YouTube) is segmented: libavformat reads a whole MPEG-TS chunk, t
 2. **Pace only segmented sources.** After each decode, the worker waits until that frame's PTS is due, *then* publishes. RTSP is already a realtime clock and is not paced. Lateness up to `buffer_ms` is absorbed; beyond that the origin snaps instead of dumping. File sources are paced so a looped idle card plays at the right speed.
 3. **Codec low-delay only on software when the buffer is 0.** `AV_CODEC_FLAG_LOW_DELAY` belongs on the codec context, not the format `flags` dict. Hardware opens never set it: VideoToolbox has its own reorder buffer, and combining the two yields `vt decoder cb: output image buffer is null`.
 
-`options.force_software` skips hardware decode for that source even when the host would otherwise use it. Changing buffer, force-software, URL, or credentials restarts the worker.
+`options.force_software` skips hardware decode for that source even when the host would otherwise use it. `options.force_hardware` retries the host path when a prior probe stored `hw_decode=false` (mutually exclusive with force-software). Changing buffer, force-software, force-hardware, URL, or credentials restarts the worker.
 
 ### Files
 

@@ -21,9 +21,9 @@ None of these is fatal. All of them need to be in the design rather than discove
 
 ## Per-model capability (Raspberry Pi)
 
-| | Pi 4 (BCM2711) | Pi 5 (BCM2712) |
+| | Pi 4 / CM4 (BCM2711) | Pi 5 (BCM2712) |
 |---|---|---|
-| H.264 decode | Hardware, 1080p-class | **None** — software on 4× Cortex-A76 |
+| H.264 decode | Hardware, 1080p-class (`h264_v4l2m2m`) | **None** — software on 4× Cortex-A76 |
 | HEVC decode | Hardware (`rpivid`) | Hardware, 4K60 |
 | VP9 / AV1 | Software | Software |
 | H.264 interface | Stateful V4L2 M2M, `/dev/video10` (`bcm2835-codec`) | n/a |
@@ -80,11 +80,15 @@ There *is* a hook: `SDL_CreateTextureWithProperties` accepts `SDL_PROP_TEXTURE_C
 **Copy frames to system memory. Ship that. Optimise later.**
 
 ```
-decode with hwaccel drm → DRM PRIME frame (SAND tiled)
+H.264 on Pi 4/CM4 (h264_v4l2m2m, no DRM hwdevice)
+  → YUV420P in system memory
+  → SDL_UpdateYUVTexture on an SDL_PIXELFORMAT_IYUV streaming texture
+
+HEVC (hwaccel drm) → DRM PRIME frame (SAND tiled)
   → hwdownload + format=nv12   (detile + copy to system memory)
   → SDL_UpdateNVTexture on an SDL_PIXELFORMAT_NV12 streaming texture
 
-software H.264 (Pi 5)
+software H.264 (Pi 5, or any host without an H.264 path)
   → YUV420P in system memory
   → pack into the frame-slot pool as I420
   → SDL_UpdateYUVTexture on an SDL_PIXELFORMAT_IYUV streaming texture

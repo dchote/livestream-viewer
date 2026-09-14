@@ -30,6 +30,7 @@ If you are unsure which kind to choose, ask the camera or stream owner. Do not g
 - **Buffer (seconds)** — Adds a small delay to make an internet stream smoother. YouTube, HLS, and DASH start at four seconds. Increase it if playback pauses or jumps; reduce it when being close to live matters more.
 - **Enabled** — An off source remains saved but will not play.
 - **Force software decode** — Leave this off. Support may ask you to turn it on when the host’s video hardware or driver cannot play a particular feed.
+- **Force hardware decode** — Leave this off unless a source stays on **Software** after the host gained decode devices (for example after an add-on or supervisor update that maps `/dev/video*`). It overrides a stored software probe result when the host still has a hardware path for that codec. You cannot enable it together with **Force software decode**.
 - **Verify TLS certificate (RTSPS)** — Use only for secure RTSP addresses. Turn it on when the camera has a certificate your organization trusts.
 
 ## Read the probe status

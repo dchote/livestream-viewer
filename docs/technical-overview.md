@@ -144,7 +144,7 @@ A source is a producer of video frames, independent of where it is shown.
 | `kind` | `youtube` \| `rtsp` \| `hls` \| `dash` \| `http` \| `srt` \| `rtmp` \| `file` |
 | `url` | Stream URL, or the stored path for `file` |
 | `credentials` | Username/password for RTSP, stored encrypted at rest is out of scope; see security notes |
-| `options` | Kind-specific: RTSP transport (`tcp`/`udp`), file loop, `buffer_ms` (jitter buffer; default 4000 for YouTube/HLS/DASH), `force_software` |
+| `options` | Kind-specific: RTSP transport (`tcp`/`udp`), file loop, `buffer_ms` (jitter buffer; default 4000 for YouTube/HLS/DASH), `force_software`, `force_hardware` (mutually exclusive) |
 | `enabled` | Sources can be defined but held inactive |
 | `probe` | Cached result: codec, resolution, frame rate, whether hardware decode is available |
 
@@ -257,7 +257,7 @@ open input (libavformat)
 
 **Sources are not synchronised to each other, and should not be.** There is no common timebase between a YouTube stream and an RTSP camera, so each tile keeps its own clock and the display is master only for presentation. What they share is the render pass: sources are anchored a refresh apart, cycling every four, so a grid of 1080p tiles does not converge its uploads onto one iteration and overrun the refresh — which would hitch every tile at once. Steady state draws straight to the backbuffer; the offscreen targets are used only to blend a transition or feed the preview. A loop period beyond 1.5× the refresh counts as a dropped frame in display state. Tearing is structural rather than incidental: vsync flips at vblank and all uploads precede all draws, and a driver refusing vsync is reported as `vsync_unavailable`. See [Presentation timing](architecture/display-pipeline.md#presentation-timing).
 
-HLS and YouTube must still not *produce* faster than media time: a whole segment arrives at once, and dumping it would simply overflow the queue. Those sources preroll by `options.buffer_ms` (default 4s) via FFmpeg `live_start_index`, and the worker waits on PTS **before** each publish. RTSP is not paced. `options.force_software` forces the software decoder.
+HLS and YouTube must still not *produce* faster than media time: a whole segment arrives at once, and dumping it would simply overflow the queue. Those sources preroll by `options.buffer_ms` (default 4s) via FFmpeg `live_start_index`, and the worker waits on PTS **before** each publish. RTSP is not paced. `options.force_software` forces the software decoder; `options.force_hardware` retries the host hardware path even when a prior probe stored `hw_decode=false` (still requires a real path for that codec).
 
 **Failure handling** is per-source and never propagates. A worker that loses its input enters a reconnect loop with exponential backoff and jitter, capped at 30 seconds; the attempt counter resets after a session that produced frames. Because a permanently unreachable source increments that counter indefinitely, the doubling is bounded iteration rather than a shift — an overflow there produced a negative delay and a panic after about 25 minutes of continuous failure. The engine keeps showing the last good frame while that source is still needed.
 
@@ -269,17 +269,19 @@ See [Stream Ingest](architecture/stream-ingest.md).
 
 ### Hardware Decode
 
-Decode capacity is host-specific. The application probes what is available at startup and surfaces it through `GET /api/v1/system/info` and in the UI, so a dense grid of software-only streams is an informed choice rather than a silent failure.
+Decode capacity is host-specific. The application probes what is available at startup and surfaces it through `GET /api/v1/system/info` (`board_model`, `h264_path` / `hevc_path`, `v4l2_m2m`, …) and in the UI, so a dense grid of software-only streams is an informed choice rather than a silent failure.
 
 Illustrative Linux SBC matrix (see the dedicated doc for full detail):
 
 | Platform | H.264 | HEVC | Interface |
 |----------|-------|------|-----------|
-| Raspberry Pi 4 | Hardware | Hardware | Stateful V4L2 M2M for H.264; stateless V4L2 request for HEVC |
+| Raspberry Pi 4 / CM4 | Hardware (`h264_v4l2m2m`, no DRM ctx) | Hardware | Stateful V4L2 M2M for H.264; stateless V4L2 request for HEVC |
 | Raspberry Pi 5 | **Software only** | Hardware (4K60) | Stateless V4L2 request only; H.264 block removed from BCM2712 |
 | Desktop Linux / macOS | Depends | Depends | VA-API, VideoToolbox, or software |
 
-On constrained hosts the binding limit is usually decode, not compositing. **The baseline design copies frames to system memory** (`hwdownload` to NV12, or a packed I420 copy for software 4:2:0) and uploads them with `SDL_UpdateNVTexture` / `SDL_UpdateYUVTexture`. Zero-copy paths (DMA-BUF import into GL textures) are platform-specific later optimisations behind a stable frame-delivery interface.
+Probe must see a real V4L2 M2M node before claiming H.264 hardware — the `h264_v4l2m2m` decoder name alone is not enough (Pi 5 still links it). Containers also need `/dev/video*` mapped; after that lands, re-probe or set `force_hardware` if a source still has a stale `hw_decode=false`.
+
+On constrained hosts the binding limit is usually decode, not compositing. **The baseline design copies frames to system memory** (V4L2 M2M already yields system-memory YUV; DRM/HEVC uses `hwdownload` to NV12; software 4:2:0 stays I420) and uploads them with `SDL_UpdateNVTexture` / `SDL_UpdateYUVTexture`. Zero-copy paths (DMA-BUF import into GL textures) are platform-specific later optimisations behind a stable frame-delivery interface.
 
 On macOS, VideoToolbox is the hardware path. It cannot start mid-GOP: joining live RTSP without waiting for an IDR used to spam `hardware accelerator failed to decode picture`. Hardware sessions wait for a keyframe, do not set `AV_CODEC_FLAG_LOW_DELAY`, and pass `hwaccel_flags=+allow_profile_mismatch+ignore_level`. RTSP still stays on software unless a probe actually produced a hardware frame.
 
@@ -342,7 +344,7 @@ Served on port `8099` by default (`LSV_HTTP_PORT`), alongside the embedded SPA.
 | `/api/v1/auth/change-password` | POST | Change password (required when `must_change_password` is set) |
 | `/api/v1/users` | GET, POST | Admin-only user list and create |
 | `/api/v1/users/:id` | PATCH, DELETE | Admin-only role update and delete |
-| `/api/v1/system/info` | GET | Platform, decode capabilities, detected displays, version |
+| `/api/v1/system/info` | GET | Platform, board model, per-codec decode paths, V4L2 M2M nodes, displays, version |
 | `/api/v1/sources` | GET, POST | Source list and create |
 | `/api/v1/sources/:id` | GET, PATCH, DELETE | Single source |
 | `/api/v1/sources/:id/probe` | POST | Re-probe: codec, resolution, hardware decode availability |

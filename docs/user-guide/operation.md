@@ -49,7 +49,7 @@ Start with changes that reduce work:
 
 1. Use lower-resolution camera substreams for small tiles.
 2. Show fewer simultaneous sources.
-3. Prefer sources marked **Hardware** over **Software**.
+3. Prefer sources marked **Hardware** over **Software**. If a source unexpectedly stays on Software after a host or add-on update that should enable hardware decode, see [Video pauses, jumps, or falls behind](troubleshooting.md#video-pauses-jumps-or-falls-behind).
 4. Increase the buffer slightly for YouTube, HLS, or DASH feeds.
 5. Use **cut** or a short transition.
 
