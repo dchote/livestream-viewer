@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Use V4L2 M2M (`h264_v4l2m2m`) for H.264 hardware decode on Pi 4/CM4 instead of incorrectly requiring a DRM hwdevice context.
+- Probe real M2M nodes (`VIDIOC_QUERYCAP` / sysfs) so Pi 5 is not claimed as H.264-capable just because the decoder is linked.
+- Expose board model, decode paths, and V4L2 M2M nodes on `GET /api/v1/system/info`.
+- Add source option **Force hardware decode** (mutually exclusive with force software) to override a stale `hw_decode=false` probe after host device changes.
+
 ## 0.1.3
 
 - Stop pinning KMSDRM to `card0`. Setting `SDL_KMSDRM_DEVICE_INDEX` makes SDL skip its scan for the card with a connected panel, so on boards whose `card0` is a render-only node the display engine failed with `error getting KMSDRM displays information`. `display.device` now defaults to auto-detect.
