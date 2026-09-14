@@ -350,20 +350,29 @@ func waitWorker(done <-chan struct{}) {
 }
 
 // ShouldUseHW reports whether this source should open a hardware decoder.
-// Probe.hw_decode false is always honored. VideoToolbox cannot decode many
-// IP-camera RTSP bitstreams (including UniFi Protect); those stay on software
-// unless a probe actually produced a hardware frame.
+//
+// ForceSoftware always wins. ForceHardware overrides a stale hw_decode=false
+// probe when the host still has a path for the codec. VideoToolbox RTSP stays
+// software unless a probe produced a hardware frame or ForceHardware is set —
+// many IP-camera bitstreams (including UniFi Protect) fail on VT.
 func ShouldUseHW(src model.Source, caps capability.Info) bool {
 	if src.Options.ForceSoftware {
 		return false
 	}
+	codec := src.Probe.Codec
+	if src.Options.ForceHardware {
+		if codec != "" {
+			return caps.Supports(codec)
+		}
+		return caps.HasAnyHW()
+	}
 	if src.Probe.HWDecode != nil && !*src.Probe.HWDecode {
 		return false
 	}
-	if src.Probe.Codec != "" && !caps.Supports(src.Probe.Codec) {
+	if codec != "" && !caps.Supports(codec) {
 		return false
 	}
-	if !caps.H264HW && !caps.HEVCHW && caps.HWTypeName == "" {
+	if !caps.HasAnyHW() {
 		return false
 	}
 	if caps.VideoToolbox && src.Kind == model.KindRTSP {
@@ -412,6 +421,10 @@ func ingestFingerprint(s model.Source) string {
 	if s.Options.ForceSoftware {
 		sw = 1
 	}
+	fh := 0
+	if s.Options.ForceHardware {
+		fh = 1
+	}
 	hw := "-"
 	if s.Probe.HWDecode != nil {
 		if *s.Probe.HWDecode {
@@ -420,7 +433,7 @@ func ingestFingerprint(s model.Source) string {
 			hw = "0"
 		}
 	}
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d|%s|%s|%d|%s|%s",
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d|%d|%s|%s|%d|%s|%s",
 		s.Kind, s.URL, s.Username, s.Password, s.Options.Transport,
-		s.EffectiveBufferMS(), sw, loop, tls, up, s.Probe.Codec, hw)
+		s.EffectiveBufferMS(), sw, fh, loop, tls, up, s.Probe.Codec, hw)
 }

@@ -88,6 +88,9 @@ func validateKind(s *model.Source, creating bool) error {
 			return fmt.Errorf("buffer_ms must be between %d and %d", model.MinBufferMS, model.MaxBufferMS)
 		}
 	}
+	if s.Options.ForceSoftware && s.Options.ForceHardware {
+		return fmt.Errorf("force_software and force_hardware are mutually exclusive")
+	}
 	return nil
 }
 

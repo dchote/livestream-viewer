@@ -135,15 +135,12 @@ Audio packets are dropped before they reach a decoder. This is not merely a feat
 At startup the capability prober inspects the platform once and caches the result:
 
 - DRM render nodes under `/dev/dri`
-- V4L2 M2M devices (for example `/dev/video10` and neighbours on a Raspberry Pi 4)
-- V4L2 stateless request devices (for example `/dev/video19` + `/dev/media*`, `rpivid` on Pi)
-- Desktop hwaccels where present (VA-API, VideoToolbox, …)
-- Which FFmpeg hwaccels and decoders the linked libav actually offers
-- VA-API on development machines
+- V4L2 M2M devices (`VIDIOC_QUERYCAP` / sysfs names such as `/dev/video10` on a Raspberry Pi 4)
+- V4L2 media-controller nodes (`/dev/media*`) for Pi HEVC / drm
+- Desktop hwaccels where present (VA-API, VideoToolbox)
+- Which named decoders and hwdevice contexts the linked libav actually opens
 
-Per source, the worker then picks the best available path for the stream's codec, and records the decision on the source's probe record so the UI can show it. If no hardware path exists, it falls back to software decode and says so — silently dropping frames while the user believes they have acceleration is the failure mode this design most wants to avoid.
-
-**VideoToolbox (macOS) does not conceal missing references.** Joining an RTSP camera mid-GOP and feeding P-frames to the hardware decoder produces a burst of `hardware accelerator failed to decode picture` until the next IDR. Hardware sessions wait for a keyframe before `SendPacket`, do not set `AV_CODEC_FLAG_LOW_DELAY` (that flag fights VideoToolbox's own reorder buffer), and pass `hwaccel_flags=+allow_profile_mismatch+ignore_level`. IP-camera RTSP still stays on software unless a probe actually produced a hardware frame.
+Per source, the worker picks a **path**: `h264_v4l2m2m` (no DRM context), or generic decoder + VideoToolbox / VA-API / DRM. Source option `force_hardware` overrides a stale `hw_decode=false` probe when the host still has a path; `force_software` skips hardware entirely.
 
 A configurable cap limits concurrent hardware decoder instances, because the Pi's decoder blocks are a finite resource and exceeding them fails in confusing ways.
 

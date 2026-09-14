@@ -112,6 +112,10 @@ type SourceOptions struct {
 	// ForceSoftware skips hardware decode even when the probe and host
 	// would otherwise use it.
 	ForceSoftware bool `json:"force_software,omitempty"`
+	// ForceHardware requests hardware decode even when a prior probe recorded
+	// hw_decode=false. Ignored when ForceSoftware is set or the host has no
+	// path for the stream's codec. Mutually exclusive with ForceSoftware.
+	ForceHardware bool `json:"force_hardware,omitempty"`
 }
 
 // EffectiveBufferMS is the jitter buffer used at open. Segmented live

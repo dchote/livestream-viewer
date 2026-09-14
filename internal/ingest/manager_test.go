@@ -11,7 +11,10 @@ import (
 func TestShouldUseHW(t *testing.T) {
 	hw := true
 	sw := false
-	vt := capability.Info{VideoToolbox: true, H264HW: true, HWTypeName: "videotoolbox"}
+	vt := capability.WithPaths(
+		capability.Path{Method: capability.MethodVideoToolbox, UseHWCtx: true},
+		capability.Path{},
+	)
 	rtsp := model.Source{Kind: model.KindRTSP, Probe: model.ProbeResult{Codec: "h264"}}
 	if ShouldUseHW(rtsp, vt) {
 		t.Fatal("unprobed RTSP must not use VideoToolbox")
@@ -31,6 +34,28 @@ func TestShouldUseHW(t *testing.T) {
 	file.Options.ForceSoftware = true
 	if ShouldUseHW(file, vt) {
 		t.Fatal("force_software must skip hardware")
+	}
+	file.Options.ForceSoftware = false
+	file.Options.ForceHardware = true
+	file.Probe.HWDecode = &sw
+	if !ShouldUseHW(file, vt) {
+		t.Fatal("force_hardware must override hw_decode false when the host supports the codec")
+	}
+	both := model.Source{Kind: model.KindFile, Probe: model.ProbeResult{Codec: "h264"}, Options: model.SourceOptions{ForceSoftware: true, ForceHardware: true}}
+	if ShouldUseHW(both, vt) {
+		t.Fatal("force_software must win over force_hardware")
+	}
+	v4l := capability.WithPaths(
+		capability.Path{Method: capability.MethodV4L2M2M, Decoder: "h264_v4l2m2m"},
+		capability.Path{},
+	)
+	yt := model.Source{Kind: model.KindYouTube, Probe: model.ProbeResult{Codec: "h264", HWDecode: &sw}}
+	if ShouldUseHW(yt, v4l) {
+		t.Fatal("stale hw_decode false without force_hardware must stay soft")
+	}
+	yt.Options.ForceHardware = true
+	if !ShouldUseHW(yt, v4l) {
+		t.Fatal("force_hardware on V4L2 host must try HW")
 	}
 }
 
@@ -61,6 +86,11 @@ func TestIngestFingerprintChangesWithBuffer(t *testing.T) {
 	b.Options.ForceSoftware = true
 	if ingestFingerprint(a) == ingestFingerprint(b) {
 		t.Fatal("force_software must restart")
+	}
+	b.Options.ForceSoftware = false
+	b.Options.ForceHardware = true
+	if ingestFingerprint(a) == ingestFingerprint(b) {
+		t.Fatal("force_hardware must restart")
 	}
 }
 

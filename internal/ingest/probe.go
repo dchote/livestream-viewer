@@ -104,6 +104,8 @@ func Inspect(ctx context.Context, in ProbeInput) model.ProbeResult {
 	if !s.Options.ForceSoftware {
 		hw = hardwareDecodable(ctx, opts, in.Caps, codec)
 	}
+	// ForceHardware still records the honest outcome; it only changes whether
+	// the running worker will try the hardware path despite hw_decode=false.
 	hwDecode := &hw
 
 	if err := decodeThumbnail(sess, in.ThumbDir, s.ID); err != nil {

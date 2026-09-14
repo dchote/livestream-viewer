@@ -55,6 +55,11 @@ func TestValidateCreate(t *testing.T) {
 	if err := ValidateCreate(s); err != nil {
 		t.Fatal(err)
 	}
+
+	s = &model.Source{Name: "yt", Kind: model.KindYouTube, URL: "https://youtube.com/watch?v=x", Options: model.SourceOptions{ForceSoftware: true, ForceHardware: true}}
+	if err := ValidateCreate(s); err == nil {
+		t.Fatal("force_software and force_hardware are mutually exclusive")
+	}
 }
 
 func TestValidateUpdate(t *testing.T) {

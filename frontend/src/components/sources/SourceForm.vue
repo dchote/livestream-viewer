@@ -109,6 +109,16 @@
         inset
         density="compact"
         hide-details="auto"
+        :disabled="form.options.force_hardware"
+      />
+      <v-switch
+        v-model="form.options.force_hardware"
+        label="Force hardware decode"
+        color="primary"
+        inset
+        density="compact"
+        hide-details="auto"
+        :disabled="form.options.force_software"
       />
       <v-switch
         v-if="form.kind === 'rtsp'"
@@ -168,6 +178,7 @@ watch(
       tls_verify: src.options?.tls_verify === true,
       buffer_seconds: bufferSecondsFromSource(src),
       force_software: src.options?.force_software === true,
+      force_hardware: src.options?.force_hardware === true,
     }
   },
   { immediate: true },
@@ -216,6 +227,7 @@ function emptyForm() {
       tls_verify: false,
       buffer_seconds: 0,
       force_software: false,
+      force_hardware: false,
     },
   }
 }
@@ -234,6 +246,7 @@ function payload() {
     enabled: form.enabled,
     options: {
       force_software: !!form.options.force_software,
+      force_hardware: !!form.options.force_hardware,
       buffer_ms: Math.max(0, Math.min(30000, Math.round(Number(form.options.buffer_seconds) * 1000) || 0)),
     },
   }

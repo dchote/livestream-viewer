@@ -116,13 +116,17 @@ At startup, once, the prober records:
 |-------|--------|
 | Board model | `/proc/device-tree/model` |
 | DRM devices | Enumerate `/dev/dri/card*`, `/dev/dri/renderD*` |
-| V4L2 M2M devices | Enumerate `/dev/video*`, query `VIDIOC_QUERYCAP` for M2M capability |
-| V4L2 request devices | Presence of `/dev/media*` paired with a stateless decoder |
-| FFmpeg hwaccels | `av_hwdevice_iterate_types` via astiav |
-| Decoders per codec | `avcodec_find_decoder_by_name` for the relevant candidates |
-| VA-API | Development machines only |
+| V4L2 nodes | Enumerate `/dev/video*` |
+| V4L2 M2M | `VIDIOC_QUERYCAP` for `V4L2_CAP_VIDEO_M2M(_MPLANE)`; sysfs name fallback (`bcm2835-codec-decode`, …) |
+| Media controller | Enumerate `/dev/media*` (Pi HEVC / drm) |
+| FFmpeg hwdevices | Create and free VideoToolbox / VA-API / DRM contexts (failures logged at debug) |
+| Per-codec path | Choose `videotoolbox`, `vaapi`, `v4l2m2m`, or `drm` — never claim H.264 from DRM alone |
 
-The result is exposed at `GET /api/v1/system/info` and rendered in the UI, so a user can see "Pi 5 · HEVC: hardware · H.264: software" before designing a nine-tile wall.
+H.264 on Pi 4/CM4 uses **`h264_v4l2m2m`** with no DRM hwdevice context (system-memory YUV). HEVC uses the generic decoder plus a DRM device context when media/HEVC nodes are present. A Pi 5 has no H.264 block: `h264_v4l2m2m` may still be linked in FFmpeg, but without an M2M node the probe reports software.
+
+The result is exposed at `GET /api/v1/system/info` (`h264_hw`, `hevc_hw`, `h264_path`, `hevc_path`, `v4l2_m2m`, …) and rendered in the UI.
+
+**Operator override:** source option `force_hardware` tries the host path even when a prior probe stored `hw_decode=false` (for example after V4L2 devices were mapped into a container). `force_software` remains the opposite override; the two are mutually exclusive.
 
 ## macOS / VideoToolbox
 

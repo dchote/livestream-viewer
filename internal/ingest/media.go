@@ -76,22 +76,24 @@ func OpenVideo(ctx context.Context, opts OpenOptions, caps capability.Info, want
 	}
 
 	codecID := in.CodecParameters().CodecID()
-	usingHW := wantHW && caps.HWType != astiav.HardwareDeviceTypeNone
-	dec := pickDecoder(codecID, caps, usingHW)
+	codecName := codecID.Name()
+	path, pathOK := caps.PathFor(codecName)
+	usingHW := wantHW && pathOK
+	dec := pickDecoder(codecID, path, usingHW)
 	if dec == nil {
 		stop()
 		fc.CloseInput()
 		fc.Free()
 		ii.Free()
-		return nil, fmt.Errorf("no decoder for %s", codecID.Name())
+		return nil, fmt.Errorf("no decoder for %s", codecName)
 	}
 
-	cc, hdc, err := openCodec(in, dec, caps, usingHW, opts.BufferMS <= 0)
+	cc, hdc, err := openCodec(in, dec, path, usingHW, opts.BufferMS <= 0)
 	if err != nil && usingHW && allowSW {
 		usingHW = false
 		sw := astiav.FindDecoder(codecID)
 		if sw != nil {
-			cc, hdc, err = openCodec(in, sw, caps, false, opts.BufferMS <= 0)
+			cc, hdc, err = openCodec(in, sw, capability.Path{}, false, opts.BufferMS <= 0)
 		}
 	}
 	if err != nil {
@@ -113,19 +115,19 @@ func OpenVideo(ctx context.Context, opts OpenOptions, caps capability.Info, want
 	}, nil
 }
 
-// pickDecoder prefers a named hwaccel decoder when one actually exists.
-// VideoToolbox has no h264_videotoolbox decoder (that name is an encoder);
-// decode uses the generic H.264 decoder plus a hardware device context.
-func pickDecoder(id astiav.CodecID, caps capability.Info, hw bool) *astiav.Codec {
-	if hw && caps.HWTypeName != "" && caps.HWTypeName != "videotoolbox" {
-		if d := astiav.FindDecoderByName(id.Name() + "_" + caps.HWTypeName); d != nil {
+// pickDecoder prefers a named hardware decoder (h264_v4l2m2m) when the path
+// requires one. VideoToolbox / VA-API / DRM use the generic decoder plus a
+// hardware device context — there is no h264_videotoolbox decoder.
+func pickDecoder(id astiav.CodecID, path capability.Path, hw bool) *astiav.Codec {
+	if hw && path.Decoder != "" {
+		if d := astiav.FindDecoderByName(path.Decoder); d != nil {
 			return d
 		}
 	}
 	return astiav.FindDecoder(id)
 }
 
-func openCodec(in *astiav.Stream, codec *astiav.Codec, caps capability.Info, hw, lowDelay bool) (*astiav.CodecContext, *astiav.HardwareDeviceContext, error) {
+func openCodec(in *astiav.Stream, codec *astiav.Codec, path capability.Path, hw, lowDelay bool) (*astiav.CodecContext, *astiav.HardwareDeviceContext, error) {
 	cc := astiav.AllocCodecContext(codec)
 	if cc == nil {
 		return nil, nil, fmt.Errorf("alloc codec context")
@@ -142,14 +144,15 @@ func openCodec(in *astiav.Stream, codec *astiav.Codec, caps capability.Info, hw,
 		cc.SetFlags(cc.Flags().Add(astiav.CodecContextFlagLowDelay))
 	}
 	var hdc *astiav.HardwareDeviceContext
-	if hw && caps.HWType != astiav.HardwareDeviceTypeNone {
+	useCtx := hw && path.UseHWCtx && path.HWType != astiav.HardwareDeviceTypeNone
+	if useCtx {
 		var err error
-		hdc, err = astiav.CreateHardwareDeviceContext(caps.HWType, "", nil, 0)
+		hdc, err = astiav.CreateHardwareDeviceContext(path.HWType, "", nil, 0)
 		if err != nil {
 			cc.Free()
 			return nil, nil, err
 		}
-		hwPix := hardwarePixel(hdc, caps)
+		hwPix := hardwarePixel(hdc, path.HWType)
 		cc.SetHardwareDeviceContext(hdc)
 		cc.SetExtraHardwareFrames(16)
 		cc.SetThreadCount(1)
@@ -162,8 +165,12 @@ func openCodec(in *astiav.Stream, codec *astiav.Codec, caps capability.Info, hw,
 			return astiav.PixelFormatNone
 		})
 	} else {
-		hw = false
-		if lowDelay {
+		if !hw {
+			if lowDelay {
+				cc.SetThreadCount(1)
+			}
+		} else {
+			// V4L2 M2M: single-threaded codec open; frames are system memory.
 			cc.SetThreadCount(1)
 		}
 	}
@@ -186,9 +193,9 @@ func openCodec(in *astiav.Stream, codec *astiav.Codec, caps capability.Info, hw,
 	return cc, hdc, nil
 }
 
-func hardwarePixel(hdc *astiav.HardwareDeviceContext, caps capability.Info) astiav.PixelFormat {
+func hardwarePixel(hdc *astiav.HardwareDeviceContext, hwType astiav.HardwareDeviceType) astiav.PixelFormat {
 	fallback := astiav.PixelFormatVideotoolbox
-	switch caps.HWType {
+	switch hwType {
 	case astiav.HardwareDeviceTypeVAAPI:
 		fallback = astiav.PixelFormatVaapi
 	case astiav.HardwareDeviceTypeCUDA:

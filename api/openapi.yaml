@@ -287,11 +287,29 @@ paths:
                   capabilities:
                     type: object
                     properties:
+                      board_model: { type: string }
                       h264_hw: { type: boolean }
                       hevc_hw: { type: boolean }
+                      h264_path:
+                        type: string
+                        description: Hardware path for H.264 (`videotoolbox`, `vaapi`, `v4l2m2m`), empty when software-only.
+                      hevc_path:
+                        type: string
+                        description: Hardware path for HEVC (`videotoolbox`, `vaapi`, `drm`), empty when software-only.
+                      hw_type:
+                        type: string
+                        description: Preferred path label (usually the H.264 path).
                       videotoolbox: { type: boolean }
                       vaapi: { type: boolean }
                       v4l2: { type: array, items: { type: string } }
+                      v4l2_m2m:
+                        type: array
+                        items: { type: string }
+                        description: V4L2 memory-to-memory codec nodes (for example `/dev/video10`).
+                      media:
+                        type: array
+                        items: { type: string }
+                        description: Media-controller nodes used with Pi HEVC / drm.
                       drm: { type: array, items: { type: string } }
                   displays:
                     type: array
@@ -1247,6 +1265,13 @@ components:
         force_software:
           type: boolean
           description: Skip hardware decode even when the host supports it.
+        force_hardware:
+          type: boolean
+          description: |
+            Try hardware decode even when a prior probe recorded `hw_decode=false`.
+            Mutually exclusive with `force_software`. Still requires a host path
+            for the stream codec (for example `h264_v4l2m2m` on Pi 4/CM4).
+            Re-probe after changing host devices when possible.
     ProbeResult:
       type: object
       properties:
@@ -1259,7 +1284,7 @@ components:
         width: { type: integer }
         height: { type: integer }
         fps: { type: number }
-        hw_decode: { type: boolean, nullable: true, description: True only if a hardware frame was actually decoded. On macOS RTSP, false keeps VideoToolbox off. }
+        hw_decode: { type: boolean, nullable: true, description: True only if a hardware frame was actually decoded. On macOS RTSP, false keeps VideoToolbox off unless `force_hardware` is set. }
         probed_at: { type: string, format: date-time }
     Screen:
       allOf:
