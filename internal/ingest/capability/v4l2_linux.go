@@ -9,11 +9,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// V4L2 capability bits for memory-to-memory devices (videodev2.h).
+// V4L2 capability bits / ioctls for memory-to-memory devices (videodev2.h).
+// VIDIOC_QUERYCAP is _IOR('V', 0, struct v4l2_capability); x/sys/unix does not export it.
 const (
 	v4l2CapVideoM2M       = 0x00004000
 	v4l2CapVideoM2MMplane = 0x00008000
 	v4l2CapDeviceCaps     = 0x80000000
+	vidIOCQueryCap        = 0x80685600
 )
 
 // v4l2Capability matches struct v4l2_capability on Linux.
@@ -57,10 +59,10 @@ func isV4L2M2M(dev string) bool {
 
 func queryV4L2Caps(dev string) (v4l2Capability, bool) {
 	var zero v4l2Capability
-	f, err := os.OpenFile(dev, os.O_RDWR|os.O_NONBLOCK, 0)
+	f, err := os.OpenFile(dev, os.O_RDWR|unix.O_NONBLOCK, 0)
 	if err != nil {
 		// Some nodes are write-only encode endpoints; try read-only.
-		f, err = os.OpenFile(dev, os.O_RDONLY|os.O_NONBLOCK, 0)
+		f, err = os.OpenFile(dev, os.O_RDONLY|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return zero, false
 		}
@@ -71,7 +73,7 @@ func queryV4L2Caps(dev string) (v4l2Capability, bool) {
 	_, _, errno := unix.Syscall(
 		unix.SYS_IOCTL,
 		f.Fd(),
-		uintptr(unix.VIDIOC_QUERYCAP),
+		uintptr(vidIOCQueryCap),
 		uintptr(unsafe.Pointer(&caps)),
 	)
 	if errno != 0 {
