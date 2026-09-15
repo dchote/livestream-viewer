@@ -8,6 +8,33 @@ import (
 	"github.com/dchote/livestream-viewer/internal/source/resolver"
 )
 
+func TestEffectiveMaxHW(t *testing.T) {
+	t.Parallel()
+	v4l := capability.WithPaths(
+		capability.Path{Method: capability.MethodV4L2M2M, Decoder: "h264_v4l2m2m"},
+		capability.Path{},
+	)
+	if got := effectiveMaxHW(v4l, 4); got != 1 {
+		t.Fatalf("V4L2 M2M configured=4: got %d want 1", got)
+	}
+	if got := effectiveMaxHW(v4l, 0); got != 1 {
+		t.Fatalf("V4L2 M2M configured=0 (unlimited): got %d want 1", got)
+	}
+	if got := effectiveMaxHW(v4l, 1); got != 1 {
+		t.Fatalf("V4L2 M2M configured=1: got %d want 1", got)
+	}
+	vt := capability.WithPaths(
+		capability.Path{Method: capability.MethodVideoToolbox, UseHWCtx: true},
+		capability.Path{},
+	)
+	if got := effectiveMaxHW(vt, 4); got != 4 {
+		t.Fatalf("VideoToolbox must keep configured cap: got %d want 4", got)
+	}
+	if got := effectiveMaxHW(capability.Info{}, 4); got != 4 {
+		t.Fatalf("no H.264 path must keep configured cap: got %d want 4", got)
+	}
+}
+
 func TestShouldUseHW(t *testing.T) {
 	hw := true
 	sw := false

@@ -222,6 +222,7 @@ func (m *Manager) sync(ctx context.Context, needed []uint) {
 	}
 
 	maxHW, allowSW, backoff := m.decodePolicy()
+	maxHW = effectiveMaxHW(m.activeCaps(), maxHW)
 
 	slices.Sort(missing)
 	started := 0
@@ -311,6 +312,26 @@ func (m *Manager) decodePolicy() (maxHW int, allowSW bool, backoffMS int) {
 		return 0, true, 2000
 	}
 	return cfg.MaxHWDecoders, cfg.AllowSoftwareFallback, cfg.ReconnectBackoffMS
+}
+
+// effectiveMaxHW applies platform limits on top of the configured cap.
+// Raspberry Pi H.264 V4L2 M2M is a single shared block: opening several
+// concurrent h264_v4l2m2m sessions wedges the driver (workers never exit,
+// the wall goes black). Keep one hardware session and let the rest use
+// software when fallback is allowed.
+func effectiveMaxHW(caps capability.Info, configured int) int {
+	limit := configured
+	if caps.H264Path == capability.MethodV4L2M2M {
+		const v4l2M2MCap = 1
+		if limit <= 0 || limit > v4l2M2MCap {
+			if configured != v4l2M2MCap {
+				slog.Info("limiting concurrent V4L2 M2M hardware decoders",
+					"configured", configured, "limit", v4l2M2MCap)
+			}
+			limit = v4l2M2MCap
+		}
+	}
+	return limit
 }
 
 func (m *Manager) stopOne(id uint) {

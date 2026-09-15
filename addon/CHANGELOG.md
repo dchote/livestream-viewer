@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- Cap concurrent V4L2 M2M H.264 hardware decoders at one (Pi 4 / CM4 shared block); extras fall back to software so multi-source walls do not wedge `/dev/video*` and go black.
+- Bound `Codec.Free` during session close so a stuck V4L2 driver cannot hang ingest workers.
+
 ## 0.1.5
 
 - Prefer hardware decode whenever the host has a path for the stream codec; a prior `hw_decode=false` probe no longer locks V4L2/VA-API onto software.

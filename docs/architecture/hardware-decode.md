@@ -132,6 +132,8 @@ The result is exposed at `GET /api/v1/system/info` (`h264_hw`, `hevc_hw`, `h264_
 
 **Operator override:** source option `force_software` skips hardware. Hardware is preferred whenever the host has a path for the codec; a stale `hw_decode=false` probe no longer locks V4L2/VA-API onto software. `force_hardware` still forces a VideoToolbox RTSP retry after a failed probe. The two force flags are mutually exclusive. Capability probing refreshes when `/dev/video*` (etc.) change.
 
+**Concurrency:** Pi 4 / CM4 H.264 M2M is a single shared block. The ingest manager caps concurrent V4L2 M2M hardware sessions at one regardless of `max_hw_decoders`; remaining sources decode in software. `Session.Close` also bounds `Codec.Free` so a wedged driver cannot stall worker teardown indefinitely.
+
 ## macOS / VideoToolbox
 
 On a Mac the generic H.264 decoder plus a VideoToolbox device context is the hardware path (`h264_videotoolbox` is an encoder name). It works for files and for many livestreams. It is brittle on live RTSP:

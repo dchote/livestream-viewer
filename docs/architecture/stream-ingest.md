@@ -142,7 +142,7 @@ At startup the capability prober inspects the platform once and caches the resul
 
 Per source, the worker picks a **path**: `h264_v4l2m2m` (no DRM context), or generic decoder + VideoToolbox / VA-API / DRM. Hardware is preferred whenever the host has a path; `force_software` skips it. `force_hardware` forces a VideoToolbox RTSP retry after a failed probe.
 
-A configurable cap limits concurrent hardware decoder instances, because the Pi's decoder blocks are a finite resource and exceeding them fails in confusing ways.
+A configurable `max_hw_decoders` limits concurrent hardware decoder instances. On V4L2 M2M H.264 hosts (Pi 4 / CM4) that cap is hard-limited to **1**: opening several `h264_v4l2m2m` sessions wedges the shared decoder block (workers hang in `Codec.Free`, the wall goes black). Extra sources use software when `allow_software_fallback` is on.
 
 Details, including the Pi 4 versus Pi 5 divergence, are in [Hardware Decode](hardware-decode.md).
 

@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -236,9 +237,22 @@ func (s *Session) Close() {
 		s.cancel()
 		s.cancel = nil
 	}
+	// V4L2 M2M Codec.Free can block indefinitely when the driver is wedged
+	// (too many concurrent h264_v4l2m2m sessions). Bound the wait so the
+	// ingest manager can replace workers instead of hanging for 5s+ each.
 	if s.Codec != nil {
-		s.Codec.Free()
+		cc := s.Codec
 		s.Codec = nil
+		done := make(chan struct{})
+		go func() {
+			cc.Free()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			slog.Warn("codec free timed out; abandoning session resources")
+		}
 	}
 	if s.hdc != nil {
 		s.hdc.Free()
