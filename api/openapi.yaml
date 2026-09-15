@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: livestream-viewer API
-  version: 0.1.4
+  version: 0.1.5
   description: |
     REST API for livestream-viewer. The management UI is a consumer of this API.
     Interactive docs are served at `/docs`.
@@ -1268,10 +1268,10 @@ components:
         force_hardware:
           type: boolean
           description: |
-            Try hardware decode even when a prior probe recorded `hw_decode=false`.
-            Mutually exclusive with `force_software`. Still requires a host path
-            for the stream codec (for example `h264_v4l2m2m` on Pi 4/CM4).
-            Re-probe after changing host devices when possible.
+            Force a VideoToolbox hardware attempt on RTSP after a failed probe.
+            Mutually exclusive with `force_software`. On V4L2/VA-API hosts the
+            worker already prefers hardware when the host has a path for the
+            codec; this flag is mainly for macOS RTSP edge cases.
     ProbeResult:
       type: object
       properties:
@@ -1284,7 +1284,7 @@ components:
         width: { type: integer }
         height: { type: integer }
         fps: { type: number }
-        hw_decode: { type: boolean, nullable: true, description: True only if a hardware frame was actually decoded. On macOS RTSP, false keeps VideoToolbox off unless `force_hardware` is set. }
+        hw_decode: { type: boolean, nullable: true, description: On VideoToolbox, true only if a hardware frame was actually decoded; false keeps RTSP on software unless `force_hardware` is set. On V4L2/VA-API, true when the host has a path for the codec (workers prefer hardware regardless). }
         probed_at: { type: string, format: date-time }
     Screen:
       allOf:

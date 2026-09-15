@@ -128,7 +128,8 @@ func (h *Handlers) SystemInfo(w http.ResponseWriter, r *http.Request) {
 	if h.Runtime != nil {
 		running = h.Runtime.State().DisplayRunning
 	}
-	caps := h.Caps
+	caps := capability.Current()
+	h.Caps = caps
 	displays := []any{}
 	if h.Displays != nil {
 		if d := h.Displays(); d != nil {

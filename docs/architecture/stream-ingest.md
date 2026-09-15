@@ -92,7 +92,7 @@ HLS (including YouTube) is segmented: libavformat reads a whole MPEG-TS chunk, t
 2. **Pace only segmented sources.** After each decode, the worker waits until that frame's PTS is due, *then* publishes. RTSP is already a realtime clock and is not paced. Lateness up to `buffer_ms` is absorbed; beyond that the origin snaps instead of dumping. File sources are paced so a looped idle card plays at the right speed.
 3. **Codec low-delay only on software when the buffer is 0.** `AV_CODEC_FLAG_LOW_DELAY` belongs on the codec context, not the format `flags` dict. Hardware opens never set it: VideoToolbox has its own reorder buffer, and combining the two yields `vt decoder cb: output image buffer is null`.
 
-`options.force_software` skips hardware decode for that source even when the host would otherwise use it. `options.force_hardware` retries the host path when a prior probe stored `hw_decode=false` (mutually exclusive with force-software). Changing buffer, force-software, force-hardware, URL, or credentials restarts the worker.
+`options.force_software` skips hardware decode for that source even when the host would otherwise use it. Hardware is preferred whenever the host has a path for the stream codec (a prior `hw_decode=false` probe no longer locks V4L2/VA-API hosts onto software). `options.force_hardware` still forces a VideoToolbox RTSP attempt after a failed probe. Changing buffer, force-software, force-hardware, URL, or credentials restarts the worker.
 
 ### Files
 
@@ -140,7 +140,7 @@ At startup the capability prober inspects the platform once and caches the resul
 - Desktop hwaccels where present (VA-API, VideoToolbox)
 - Which named decoders and hwdevice contexts the linked libav actually opens
 
-Per source, the worker picks a **path**: `h264_v4l2m2m` (no DRM context), or generic decoder + VideoToolbox / VA-API / DRM. Source option `force_hardware` overrides a stale `hw_decode=false` probe when the host still has a path; `force_software` skips hardware entirely.
+Per source, the worker picks a **path**: `h264_v4l2m2m` (no DRM context), or generic decoder + VideoToolbox / VA-API / DRM. Hardware is preferred whenever the host has a path; `force_software` skips it. `force_hardware` forces a VideoToolbox RTSP retry after a failed probe.
 
 A configurable cap limits concurrent hardware decoder instances, because the Pi's decoder blocks are a finite resource and exceeding them fails in confusing ways.
 
@@ -148,7 +148,7 @@ Details, including the Pi 4 versus Pi 5 divergence, are in [Hardware Decode](har
 
 ### Frame Conversion
 
-Hardware-decoded frames on some SBCs are not linear NV12 — on Raspberry Pi they are Broadcom **SAND** tiled. The baseline path transfers them to system memory and detiles to linear NV12 (`hwdownload,format=nv12` in filter terms). The cost is one copy plus a detile per frame per stream; at 1080p that is manageable on modern Cortex-A cores.
+H.264 on Pi 4/CM4 via `h264_v4l2m2m` already yields system-memory YUV420P — no DRM PRIME frame and no `hwdownload`. HEVC on the Pi (and other DRM hwaccel paths) may still emit Broadcom **SAND** tiled frames; the baseline path transfers those to system memory and detiles to linear NV12 (`hwdownload,format=nv12` in filter terms).
 
 Software-decoded 4:2:0 stays planar I420 and uploads as `SDL_PIXELFORMAT_IYUV`. Converting it to NV12 would rewrite every luma and chroma sample in system memory before the GPU sees it — the common path on a Pi 5, where H.264 is software-only. Other pixel formats (P010, 4:2:2, …) still go through `swscale` to NV12. Hardware download remains NV12 because that is what `hwdownload` produces after SAND detile.
 

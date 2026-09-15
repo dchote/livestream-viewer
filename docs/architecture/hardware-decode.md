@@ -130,7 +130,7 @@ H.264 on Pi 4/CM4 uses **`h264_v4l2m2m`** with no DRM hwdevice context (system-m
 
 The result is exposed at `GET /api/v1/system/info` (`h264_hw`, `hevc_hw`, `h264_path`, `hevc_path`, `v4l2_m2m`, …) and rendered in the UI.
 
-**Operator override:** source option `force_hardware` tries the host path even when a prior probe stored `hw_decode=false` (for example after V4L2 devices were mapped into a container). `force_software` remains the opposite override; the two are mutually exclusive.
+**Operator override:** source option `force_software` skips hardware. Hardware is preferred whenever the host has a path for the codec; a stale `hw_decode=false` probe no longer locks V4L2/VA-API onto software. `force_hardware` still forces a VideoToolbox RTSP retry after a failed probe. The two force flags are mutually exclusive. Capability probing refreshes when `/dev/video*` (etc.) change.
 
 ## macOS / VideoToolbox
 

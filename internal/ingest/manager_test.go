@@ -21,7 +21,7 @@ func TestShouldUseHW(t *testing.T) {
 	}
 	rtsp.Probe.HWDecode = &sw
 	if ShouldUseHW(rtsp, vt) {
-		t.Fatal("hw_decode false must skip hardware")
+		t.Fatal("hw_decode false must skip VideoToolbox RTSP")
 	}
 	rtsp.Probe.HWDecode = &hw
 	if !ShouldUseHW(rtsp, vt) {
@@ -39,7 +39,7 @@ func TestShouldUseHW(t *testing.T) {
 	file.Options.ForceHardware = true
 	file.Probe.HWDecode = &sw
 	if !ShouldUseHW(file, vt) {
-		t.Fatal("force_hardware must override hw_decode false when the host supports the codec")
+		t.Fatal("force_hardware must try HW when the host supports the codec")
 	}
 	both := model.Source{Kind: model.KindFile, Probe: model.ProbeResult{Codec: "h264"}, Options: model.SourceOptions{ForceSoftware: true, ForceHardware: true}}
 	if ShouldUseHW(both, vt) {
@@ -50,12 +50,16 @@ func TestShouldUseHW(t *testing.T) {
 		capability.Path{},
 	)
 	yt := model.Source{Kind: model.KindYouTube, Probe: model.ProbeResult{Codec: "h264", HWDecode: &sw}}
-	if ShouldUseHW(yt, v4l) {
-		t.Fatal("stale hw_decode false without force_hardware must stay soft")
+	if !ShouldUseHW(yt, v4l) {
+		t.Fatal("V4L2 host must try HW even when a prior probe stored hw_decode false")
 	}
 	yt.Options.ForceHardware = true
 	if !ShouldUseHW(yt, v4l) {
 		t.Fatal("force_hardware on V4L2 host must try HW")
+	}
+	rtspVT := model.Source{Kind: model.KindRTSP, Probe: model.ProbeResult{Codec: "h264", HWDecode: &sw}, Options: model.SourceOptions{ForceHardware: true}}
+	if !ShouldUseHW(rtspVT, vt) {
+		t.Fatal("force_hardware must override failed VT RTSP probe")
 	}
 }
 
@@ -105,7 +109,10 @@ func TestYouTubeAuthGenerationRestartsWorkers(t *testing.T) {
 		t.Fatal("ReloadYouTube must change the YouTube fingerprint")
 	}
 	rtsp := model.Source{Kind: model.KindRTSP, URL: "rtsp://cam"}
-	if m.fingerprint(rtsp) != ingestFingerprint(rtsp) {
+	a := m.fingerprint(rtsp)
+	m.ReloadYouTube()
+	b := m.fingerprint(rtsp)
+	if a != b {
 		t.Fatal("RTSP fingerprints must not include the YouTube auth generation")
 	}
 }

@@ -104,14 +104,14 @@ A scheduled premiere or event that has not started is not yet a playable livestr
 ## Video pauses, jumps, or falls behind
 
 1. Check whether the source is marked **Hardware** or **Software**.
-2. On the Stream Sources page, read the host capability line (H.264 / HEVC path and any V4L2 M2M nodes).
+2. On the Stream Sources page, read the **Decode** capability line (H.264 / HEVC).
 3. Use lower-resolution camera substreams in small tiles.
 4. Reduce the number of sources visible at the same time.
 5. For YouTube, HLS, or DASH, increase **Buffer (seconds)** a little.
 6. For a local camera, check network stability before adding buffer.
 7. Use shorter transitions or **cut**.
 8. Avoid probing several sources while the wall is in critical use.
-9. After host or container device changes (for example mapping `/dev/video*`), turn on **Force hardware decode** on the source, or **Probe** again, then save. A stored `hw_decode: false` from an earlier software-only run otherwise keeps the worker on software.
+9. After host or container device changes, restart the add-on (or wait for the next capability refresh), then **Probe** the source again. Use **Force hardware decode** only for stubborn VideoToolbox/RTSP cases.
 
 Software status is not itself an error, but several high-resolution software-decoded feeds may exceed a small host’s capacity. **Force software decode** and **Force hardware decode** are mutually exclusive.
 

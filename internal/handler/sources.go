@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dchote/livestream-viewer/internal/ingest/capability"
 	"github.com/dchote/livestream-viewer/internal/model"
 	"github.com/dchote/livestream-viewer/internal/source"
 	"gorm.io/gorm"
@@ -212,6 +213,7 @@ func (h *Handlers) ProbeSource(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "db_error", "failed to load source", nil)
 		return
 	}
+	h.Caps = capability.Current()
 	prober := source.Prober{Tools: h.Tools, Caps: h.Caps, ThumbDir: filepath.Join(h.Cfg.DataDir, "thumbnails")}
 	s.Probe = prober.Probe(r.Context(), &s)
 	if err := h.DB.Save(&s).Error; err != nil {

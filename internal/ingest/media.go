@@ -80,6 +80,13 @@ func OpenVideo(ctx context.Context, opts OpenOptions, caps capability.Info, want
 	path, pathOK := caps.PathFor(codecName)
 	usingHW := wantHW && pathOK
 	dec := pickDecoder(codecID, path, usingHW)
+	if usingHW && path.Decoder != "" {
+		if dec == nil || dec.Name() != path.Decoder {
+			// Named hardware decoder missing — do not pretend this is a HW session.
+			usingHW = false
+			dec = astiav.FindDecoder(codecID)
+		}
+	}
 	if dec == nil {
 		stop()
 		fc.CloseInput()

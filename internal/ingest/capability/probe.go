@@ -39,43 +39,77 @@ type Info struct {
 	BoardModel   string   `json:"board_model,omitempty"`
 	VideoToolbox bool     `json:"videotoolbox"`
 	VAAPI        bool     `json:"vaapi"`
-	V4L2         []string `json:"v4l2"`
-	V4L2M2M      []string `json:"v4l2_m2m"`
-	Media        []string `json:"media,omitempty"`
-	DRM          []string `json:"drm"`
 	H264HW       bool     `json:"h264_hw"`
 	HEVCHW       bool     `json:"hevc_hw"`
-	// HWTypeName is the preferred path label for UI (h264 path, else hevc).
-	HWTypeName string       `json:"hw_type,omitempty"`
-	H264Path   DecodeMethod `json:"h264_path,omitempty"`
-	HEVCPath   DecodeMethod `json:"hevc_path,omitempty"`
+	H264Path     DecodeMethod `json:"h264_path,omitempty"`
+	HEVCPath     DecodeMethod `json:"hevc_path,omitempty"`
+	HWTypeName   string   `json:"hw_type,omitempty"` // preferred label (usually H.264 path)
+	V4L2         []string `json:"v4l2"`
+	V4L2M2M      []string `json:"v4l2_m2m"`
+	Media        []string `json:"media"`
+	DRM          []string `json:"drm"`
 
 	h264 Path
 	hevc Path
 }
 
 var (
-	once   sync.Once
-	cached Info
+	mu       sync.Mutex
+	cached   Info
+	have     bool
+	deviceFP string
+
+	// readV4L2Name reads /sys/class/video4linux/<dev>/name. Tests may override.
+	readV4L2Name = v4l2SysfsName
 )
 
-// Probe enumerates libav hardware device types and Linux nodes. Cached after the first call.
+// Probe returns host decode capabilities, refreshing when Linux codec device
+// nodes appear or disappear (for example after a supervisor remaps /dev/video*).
 func Probe() Info {
-	once.Do(func() {
-		astiav.SetLogLevel(astiav.LogLevelError)
-		astiav.SetLogCallback(quietHWAccelLog)
-		cached = probe()
-		slog.Info("hardware decode probe",
-			"board", cached.BoardModel,
-			"h264_hw", cached.H264HW,
-			"h264_path", cached.H264Path,
-			"hevc_hw", cached.HEVCHW,
-			"hevc_path", cached.HEVCPath,
-			"v4l2_m2m", cached.V4L2M2M,
-			"drm", cached.DRM,
-		)
-	})
+	return Current()
+}
+
+// Current is the cached capability snapshot, refreshed when device nodes change.
+func Current() Info {
+	mu.Lock()
+	defer mu.Unlock()
+	fp := deviceFingerprint()
+	if have && fp == deviceFP {
+		return cached
+	}
+	astiav.SetLogLevel(astiav.LogLevelError)
+	astiav.SetLogCallback(quietHWAccelLog)
+	cached = probe()
+	deviceFP = fp
+	have = true
+	slog.Info("hardware decode probe",
+		"board", cached.BoardModel,
+		"h264_hw", cached.H264HW,
+		"h264_path", cached.H264Path,
+		"hevc_hw", cached.HEVCHW,
+		"hevc_path", cached.HEVCPath,
+		"v4l2_m2m", cached.V4L2M2M,
+		"drm", cached.DRM,
+	)
 	return cached
+}
+
+// ResetCache clears the capability snapshot. Tests use this between cases.
+func ResetCache() {
+	mu.Lock()
+	defer mu.Unlock()
+	have = false
+	deviceFP = ""
+	cached = Info{}
+}
+
+func deviceFingerprint() string {
+	if runtime.GOOS != "linux" {
+		return runtime.GOOS
+	}
+	return strings.Join(globFiles("/dev/video*"), ",") + "|" +
+		strings.Join(globFiles("/dev/media*"), ",") + "|" +
+		strings.Join(globFiles("/dev/dri/card*", "/dev/dri/renderD*"), ",")
 }
 
 func probe() Info {
@@ -101,7 +135,7 @@ func probe() Info {
 	info.VAAPI = vaOK
 
 	info.h264 = chooseH264(vtOK, vaOK, info.V4L2M2M)
-	info.hevc = chooseHEVC(vtOK, vaOK, drmOK, info.V4L2M2M, info.Media)
+	info.hevc = chooseHEVC(vtOK, vaOK, drmOK, info.V4L2M2M)
 	info.H264HW = info.h264.Method != MethodNone
 	info.HEVCHW = info.hevc.Method != MethodNone
 	info.H264Path = info.h264.Method
@@ -134,47 +168,89 @@ func chooseH264(vtOK, vaOK bool, m2m []string) Path {
 	if vaOK && astiav.FindDecoderByName("h264") != nil {
 		return Path{Method: MethodVAAPI, UseHWCtx: true, HWType: astiav.HardwareDeviceTypeVAAPI}
 	}
-	// Stateful V4L2 M2M. Require both the named decoder and a real M2M node so
-	// a Pi 5 (no H.264 block) with an FFmpeg that ships h264_v4l2m2m is not
-	// claimed as hardware-capable.
-	if len(m2m) > 0 && hasDecodeM2M(m2m) && astiav.FindDecoderByName("h264_v4l2m2m") != nil {
+	// Stateful V4L2 M2M. Require an H.264 decode node — not merely any M2M
+	// device — so a Pi 5 (HEVC/rpivid only) is not claimed as H.264-capable.
+	if hasH264DecodeM2M(m2m) && astiav.FindDecoderByName("h264_v4l2m2m") != nil {
 		return Path{Method: MethodV4L2M2M, Decoder: "h264_v4l2m2m"}
 	}
 	return Path{}
 }
 
-func chooseHEVC(vtOK, vaOK, drmOK bool, m2m, media []string) Path {
+func chooseHEVC(vtOK, vaOK, drmOK bool, m2m []string) Path {
 	if vtOK && astiav.FindDecoderByName("hevc") != nil {
 		return Path{Method: MethodVideoToolbox, UseHWCtx: true, HWType: astiav.HardwareDeviceTypeVideoToolbox}
 	}
 	if vaOK && astiav.FindDecoderByName("hevc") != nil {
 		return Path{Method: MethodVAAPI, UseHWCtx: true, HWType: astiav.HardwareDeviceTypeVAAPI}
 	}
-	// Pi HEVC is stateless V4L2-request via the drm hwaccel, not hevc_v4l2m2m.
-	if drmOK && astiav.FindDecoderByName("hevc") != nil && (len(media) > 0 || hasHEVCNode(m2m)) {
+	// Pi HEVC is stateless V4L2-request via drm, not hevc_v4l2m2m. Require a
+	// named HEVC/rpivid M2M node — bare /dev/media* (ISP/camera) is not enough.
+	if drmOK && astiav.FindDecoderByName("hevc") != nil && hasHEVCNode(m2m) {
 		return Path{Method: MethodDRM, UseHWCtx: true, HWType: astiav.HardwareDeviceTypeDRM}
 	}
 	return Path{}
 }
 
-func hasDecodeM2M(nodes []string) bool {
+func hasH264DecodeM2M(nodes []string) bool {
+	var namedH264, namedHEVC, nameless bool
 	for _, n := range nodes {
-		if isEncodeOnlyName(v4l2SysfsName(n)) {
+		name := strings.ToLower(readV4L2Name(n))
+		if name == "" {
+			nameless = true
 			continue
 		}
+		if isEncodeOnlyName(name) || isImageOnlyName(name) {
+			continue
+		}
+		if isHEVCCodecName(name) {
+			namedHEVC = true
+			continue
+		}
+		if isH264DecodeName(name) {
+			namedH264 = true
+		}
+	}
+	if namedH264 {
 		return true
 	}
-	return false
+	if namedHEVC {
+		return false
+	}
+	// QUERYCAP said M2M but sysfs names are unavailable (locked-down container).
+	return nameless && len(nodes) > 0
 }
 
 func hasHEVCNode(nodes []string) bool {
 	for _, n := range nodes {
-		name := strings.ToLower(v4l2SysfsName(n))
-		if strings.Contains(name, "hevc") || strings.Contains(name, "h265") || strings.Contains(name, "rpivid") {
+		if isHEVCCodecName(readV4L2Name(n)) {
 			return true
 		}
 	}
 	return false
+}
+
+func isHEVCCodecName(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "hevc") || strings.Contains(n, "h265") || strings.Contains(n, "rpivid")
+}
+
+func isH264DecodeName(name string) bool {
+	n := strings.ToLower(name)
+	if isHEVCCodecName(n) || isEncodeOnlyName(n) || isImageOnlyName(n) {
+		return false
+	}
+	if strings.Contains(n, "h264") {
+		return true
+	}
+	if strings.Contains(n, "codec-decode") {
+		return true
+	}
+	return strings.Contains(n, "bcm2835-codec") && strings.Contains(n, "decode")
+}
+
+func isImageOnlyName(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "image") && !strings.Contains(n, "decode")
 }
 
 // PathFor returns the decode path for a codec name (h264, hevc, …).
@@ -193,18 +269,6 @@ func (i Info) PathFor(codec string) (Path, bool) {
 	default:
 		return Path{}, false
 	}
-}
-
-// HWType is the FFmpeg hardware device type for paths that need a context.
-// Empty / None for V4L2 M2M.
-func (i Info) HWType() astiav.HardwareDeviceType {
-	if p, ok := i.PathFor("h264"); ok && p.UseHWCtx {
-		return p.HWType
-	}
-	if p, ok := i.PathFor("hevc"); ok && p.UseHWCtx {
-		return p.HWType
-	}
-	return astiav.HardwareDeviceTypeNone
 }
 
 // Supports reports whether this codec name can use hardware decode here.
@@ -263,20 +327,24 @@ func quietHWAccelLog(_ astiav.Classer, l astiav.LogLevel, _, msg string) {
 		return
 	}
 	if l <= astiav.LogLevelError {
-		slog.Warn("libav", "msg", msg)
+		slog.Debug("libav", "msg", msg)
 	}
 }
 
 func isNoisyHWAccelLog(msg string) bool {
-	return strings.Contains(msg, "hardware accelerator failed to decode picture") ||
-		strings.Contains(msg, "vt decoder cb:") ||
-		strings.Contains(msg, "output image buffer is null")
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "hardware accelerator failed to decode picture") ||
+		strings.Contains(m, "output image buffer is null") ||
+		strings.Contains(m, "vt decoder cb")
 }
 
 func globFiles(patterns ...string) []string {
 	var out []string
-	for _, p := range patterns {
-		matches, _ := filepath.Glob(p)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
 		for _, m := range matches {
 			if st, err := os.Stat(m); err == nil && !st.IsDir() {
 				out = append(out, m)
@@ -290,11 +358,21 @@ func globFiles(patterns ...string) []string {
 }
 
 func readBoardModel() string {
-	b, err := os.ReadFile("/proc/device-tree/model")
-	if err != nil {
-		return ""
+	for _, path := range []string{
+		"/proc/device-tree/model",
+		"/sys/firmware/devicetree/base/model",
+	} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		model := strings.TrimSpace(strings.TrimRight(string(b), "\x00"))
+		if model != "" {
+			return model
+		}
 	}
-	return strings.TrimSpace(strings.TrimRight(string(b), "\x00"))
+	slog.Debug("board model unavailable (no device-tree model in this mount namespace)")
+	return ""
 }
 
 func v4l2SysfsName(dev string) string {
@@ -325,8 +403,10 @@ func looksLikeM2MName(name string) bool {
 		return false
 	}
 	markers := []string{
-		"codec-decode", "codec-encode", "codec-image",
-		"mem2mem", "m2m", "hevc-dec", "h264", "rpivid",
+		"codec-decode", "codec-encode",
+		"mem2mem", "m2m-", "-m2m", "mem-to-mem",
+		"hevc-dec", "h264-dec", "h264_dec", "rpivid",
+		"bcm2835-codec",
 	}
 	for _, m := range markers {
 		if strings.Contains(n, m) {

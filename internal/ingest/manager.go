@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -233,7 +234,7 @@ func (m *Manager) sync(ctx context.Context, needed []uint) {
 		srcAllowSW := allowSW || src.Options.ForceSoftware
 		useHW := false
 		m.mu.Lock()
-		if ShouldUseHW(src, m.caps) && (maxHW <= 0 || m.hwInUse < maxHW) {
+		if ShouldUseHW(src, m.activeCaps()) && (maxHW <= 0 || m.hwInUse < maxHW) {
 			useHW = true
 			m.hwInUse++
 		}
@@ -265,7 +266,7 @@ func (m *Manager) sync(ctx context.Context, needed []uint) {
 			RunWorker(wctx, WorkerConfig{
 				Source:     srcCopy,
 				Slot:       slot,
-				Caps:       m.caps,
+				Caps:       m.activeCaps(),
 				AllowSW:    srcAllowSW,
 				UseHW:      useHW,
 				BackoffMS:  backoff,
@@ -349,38 +350,50 @@ func waitWorker(done <-chan struct{}) {
 	}
 }
 
+// activeCaps returns decode capabilities for worker decisions. On Linux the
+// snapshot is refreshed when /dev/video* (etc.) change so a supervisor device
+// remap is picked up without restarting the process. Non-Linux keeps the
+// startup / test-injected value.
+func (m *Manager) activeCaps() capability.Info {
+	if m == nil {
+		return capability.Info{}
+	}
+	if runtime.GOOS == "linux" {
+		m.caps = capability.Current()
+	}
+	return m.caps
+}
+
 // ShouldUseHW reports whether this source should open a hardware decoder.
 //
-// ForceSoftware always wins. ForceHardware overrides a stale hw_decode=false
-// probe when the host still has a path for the codec. VideoToolbox RTSP stays
-// software unless a probe produced a hardware frame or ForceHardware is set —
-// many IP-camera bitstreams (including UniFi Protect) fail on VT.
+// Policy is aggressive: whenever the host has a path for the stream codec,
+// try hardware. ForceSoftware always wins. A prior probe with hw_decode=false
+// does not permanently lock V4L2/VA-API/DRM hosts onto software (those paths
+// fall back at open via allowSoftware). VideoToolbox + RTSP stays soft until a
+// probe proves a hardware frame or ForceHardware is set — many IP-camera
+// bitstreams fail on VT.
 func ShouldUseHW(src model.Source, caps capability.Info) bool {
 	if src.Options.ForceSoftware {
 		return false
 	}
 	codec := src.Probe.Codec
-	if src.Options.ForceHardware {
-		if codec != "" {
-			return caps.Supports(codec)
+	if codec != "" {
+		if !caps.Supports(codec) {
+			return false
 		}
-		return caps.HasAnyHW()
-	}
-	if src.Probe.HWDecode != nil && !*src.Probe.HWDecode {
+	} else if !caps.HasAnyHW() {
 		return false
 	}
-	if codec != "" && !caps.Supports(codec) {
-		return false
-	}
-	if !caps.HasAnyHW() {
-		return false
-	}
+
 	if caps.VideoToolbox && src.Kind == model.KindRTSP {
+		if src.Options.ForceHardware {
+			return codec == "" || caps.Supports(codec)
+		}
 		if src.Probe.HWDecode == nil || !*src.Probe.HWDecode {
 			return false
 		}
 	}
-	return true
+	return codec == "" || caps.Supports(codec)
 }
 
 // ReloadYouTube bumps the auth generation so every YouTube worker restarts
@@ -394,7 +407,8 @@ func (m *Manager) ReloadYouTube() {
 }
 
 func (m *Manager) fingerprint(s model.Source) string {
-	fp := ingestFingerprint(s)
+	caps := m.activeCaps()
+	fp := fmt.Sprintf("%s|cap:%s/%s", ingestFingerprint(s), caps.H264Path, caps.HEVCPath)
 	if s.Kind == model.KindYouTube {
 		return fmt.Sprintf("%s|yt:%d", fp, m.authGen.Load())
 	}

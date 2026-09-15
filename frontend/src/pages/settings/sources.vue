@@ -115,18 +115,13 @@ const deleting = ref(false)
 const capsHint = computed(() => {
   const c = systemInfo.value?.capabilities
   if (!c) return ''
-  const parts = []
-  if (c.board_model) parts.push(c.board_model)
-  if (c.videotoolbox) parts.push('VideoToolbox')
-  if (c.vaapi) parts.push('VA-API')
-  if (c.h264_hw) parts.push(`H.264 hardware (${c.h264_path || c.hw_type || 'yes'})`)
-  else parts.push('H.264 software')
-  if (c.hevc_hw) parts.push(`HEVC hardware (${c.hevc_path || 'yes'})`)
-  else parts.push('HEVC software')
-  if (Array.isArray(c.v4l2_m2m) && c.v4l2_m2m.length) {
-    parts.push(`V4L2 M2M: ${c.v4l2_m2m.join(', ')}`)
-  }
-  return `This host: ${parts.join(' · ')}. Status chips follow live decode health when the engine is running. Use Force hardware decode after a host change if a probe still shows software.`
+  const h264 = c.h264_hw
+    ? `H.264 hardware (${c.h264_path || 'yes'})`
+    : 'H.264 software'
+  const hevc = c.hevc_hw
+    ? `HEVC hardware (${c.hevc_path || 'yes'})`
+    : 'HEVC software'
+  return `Decode: ${h264} · ${hevc}`
 })
 
 const hasYouTubeSource = computed(() => sources.value.some((s) => s.kind === 'youtube'))

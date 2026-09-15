@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5
+
+- Prefer hardware decode whenever the host has a path for the stream codec; a prior `hw_decode=false` probe no longer locks V4L2/VA-API onto software.
+- Probe records hardware for V4L2/VA-API from host capability (VideoToolbox still requires a proven frame).
+- Require an H.264 decode M2M node before claiming H.264 HW (Pi 5 HEVC-only nodes no longer qualify).
+- Refresh capability probing when `/dev/video*` / media / DRM nodes change.
+- Shorten the Stream Sources decode capability line.
+
 ## 0.1.4
 
 - Use V4L2 M2M (`h264_v4l2m2m`) for H.264 hardware decode on Pi 4/CM4 instead of incorrectly requiring a DRM hwdevice context.

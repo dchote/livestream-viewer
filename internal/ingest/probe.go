@@ -101,11 +101,17 @@ func Inspect(ctx context.Context, in ProbeInput) model.ProbeResult {
 		fps = sess.Stream.RFrameRate().Float64()
 	}
 	hw := false
-	if !s.Options.ForceSoftware {
-		hw = hardwareDecodable(ctx, opts, in.Caps, codec)
+	if !s.Options.ForceSoftware && in.Caps.Supports(codec) {
+		// V4L2 M2M / VA-API / DRM: trust the host path. A second HW open is
+		// fragile on one-shot YouTube URLs and is unnecessary when the worker
+		// already falls back on errHWUnusable. VideoToolbox still needs a
+		// proven hardware frame (mid-GOP / hostile RTSP bitstreams).
+		if in.Caps.VideoToolbox {
+			hw = hardwareDecodable(ctx, opts, in.Caps, codec)
+		} else {
+			hw = true
+		}
 	}
-	// ForceHardware still records the honest outcome; it only changes whether
-	// the running worker will try the hardware path despite hw_decode=false.
 	hwDecode := &hw
 
 	if err := decodeThumbnail(sess, in.ThumbDir, s.ID); err != nil {

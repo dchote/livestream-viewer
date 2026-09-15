@@ -110,6 +110,7 @@
         density="compact"
         hide-details="auto"
         :disabled="form.options.force_hardware"
+        @update:model-value="(v) => { if (v) form.options.force_hardware = false }"
       />
       <v-switch
         v-model="form.options.force_hardware"
@@ -119,6 +120,7 @@
         density="compact"
         hide-details="auto"
         :disabled="form.options.force_software"
+        @update:model-value="(v) => { if (v) form.options.force_software = false }"
       />
       <v-switch
         v-if="form.kind === 'rtsp'"
@@ -177,8 +179,8 @@ watch(
       upload_id: src.options?.upload_id || null,
       tls_verify: src.options?.tls_verify === true,
       buffer_seconds: bufferSecondsFromSource(src),
-      force_software: src.options?.force_software === true,
-      force_hardware: src.options?.force_hardware === true,
+      force_software: src.options?.force_software === true && !src.options?.force_hardware,
+      force_hardware: src.options?.force_hardware === true && !src.options?.force_software,
     }
   },
   { immediate: true },
