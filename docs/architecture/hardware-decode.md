@@ -1,6 +1,6 @@
 # Hardware Decode
 
-> **Status:** Implemented for VideoToolbox (macOS: keyframe wait, no `LOW_DELAY` on hardware, `hwaccel_flags` for profile/level) and best-effort VA-API/DRM/V4L2 enumeration on Linux. The Home Assistant add-on is confirmed working on Raspberry Pi. Pi capacity numbers remain qualitative.
+> **Status:** Implemented for VideoToolbox (macOS: keyframe wait, no `LOW_DELAY` on hardware, `hwaccel_flags` for profile/level) and best-effort VA-API/DRM/V4L2 enumeration on Linux. The Home Assistant add-on is confirmed working on Raspberry Pi, and on Orange Pi 4 Pro (Allwinner A733) for panel output with software decode. Pi capacity numbers remain qualitative. Cedar hardware decode on A733 is not available through FFmpeg.
 
 livestream-viewer is platform-agnostic: it probes the host at startup and reports what each codec can do. **This document is the optimisation and capacity-planning guide for constrained Linux hosts**, with Raspberry Pi 4/5 as the primary worked example because their V4L2 surface is unusually sharp-edged. Other SBCs and desktop GPUs follow the same probe → report → fall back pattern; only the device nodes and hwaccel names change.
 
@@ -17,7 +17,7 @@ The Pi is the most constraint-laden optimisation target today, and the constrain
 3. **Upstream FFmpeg cannot produce zero-copy DMA-BUF frames from V4L2 on the Pi.** That requires an out-of-tree fork, and upstreaming is considered unlikely by the people closest to it.
 4. **The Pi's decoder does not emit linear NV12.** It emits Broadcom SAND, a tiled format that must be detiled or handled with DRM format modifiers.
 
-None of these is fatal. All of them need to be in the design rather than discovered during a demo. Other embedded platforms have their own equivalents (Rockchip MPP, Allwinner Cedar, AMD/Intel VA-API quirks); the Pi notes below are the template for documenting those as they are validated.
+None of these is fatal. All of them need to be in the design rather than discovered during a demo. Other embedded platforms have their own equivalents (Rockchip MPP, Allwinner Cedar, AMD/Intel VA-API quirks); the Pi notes below are the template for documenting those as they are validated. The Orange Pi 4 Pro section records one of those equivalents: the Video Engine is in the kernel, and the userspace that can drive it is not.
 
 ## Per-model capability (Raspberry Pi)
 
@@ -145,6 +145,57 @@ On a Mac the generic H.264 decoder plus a VideoToolbox device context is the har
 
 Residual VT picture-failure logs are demoted so they do not drown the process log; a session that never publishes still falls back to software (`errHWUnusable`).
 
+## Orange Pi 4 Pro (Allwinner A733)
+
+Measured on 8WI OS 1.0.1-dev, kernel `6.6.98-8wi-os`, add-on image 0.1.6. This board is not Rockchip. The SoC is Allwinner A733 (`sun60iw2`); the device-tree compatible string is `xunlong,orangepi-4-pro`. The device-tree model is only `sun60iw2`. The friendly name is in the host os-release (`CATALOG_BOARD_ID=orangepi_4_pro`).
+
+| | Orange Pi 4 Pro (A733) |
+|---|---|
+| CPU | 2× Cortex-A76 @ 2.0 GHz + 6× Cortex-A55 @ 1.8 GHz |
+| RAM on the unit checked | 3.8 GiB (4 GB SKU) |
+| H.264 / HEVC decode | **Software.** FFmpeg has no device to open. |
+| Display | `sunxi-drm` on `/dev/dri/card0`, HDMI-A-1. KMSDRM compositing works. |
+| GPU node | Imagination PowerVR (`pvrsrvkm`) on `/dev/dri/card1`, no connectors |
+
+SDL must keep scanning for a card with a connected panel. Pinning `SDL_KMSDRM_DEVICE_INDEX` to card1 would select the GPU node and fail the same way pinning card0 fails on a Pi. Card0 is the panel here, so the existing scan is the right behaviour.
+
+### Why the probe stays on software
+
+`chooseH264` / `chooseHEVC` only select VideoToolbox, VA-API, `h264_v4l2m2m`, or Pi-style DRM. This host has none of those. The kernel does have a Video Engine:
+
+- Module `sunxi_ve` (GPL, "User mode CEDAR device interface"), vermagic matches this kernel.
+- `/dev/cedar_dev` is the decoder. `/dev/cedar_dev_ve2` is the encoder. Both are mode 600, root. The add-on is not given `cedar_dev`.
+- No `/dev/video*`, no `/dev/media*`, no VA-API driver. FFmpeg 8 in the add-on lists `vaapi`, `drm`, and `*_v4l2m2m` wrappers, and none of them have a device.
+
+Presence of `/dev/dri` must not be reported as H.264 hardware. The probe already refuses that, and it must stay that way. Inside the add-on, `/proc/device-tree` points at `/sys/firmware/devicetree/base`, which is not mounted, so `board_model` is empty. That is a missing mount, not a failed codec probe. Do not invent a model string until the OS bind-mounts the device-tree or passes the machine name in.
+
+Mainline Cedrus and libva-v4l2-request do not support A733. The userspace that can open `/dev/cedar_dev` is vendor libcedarc / `libvdecoder`. It is not on 8WI OS, not in the add-on image, and not an FFmpeg hwaccel. The package changelog marks part of that library closed source, so it is not committed here.
+
+### What not to build
+
+- A single KMS plane (`cedarzcdec ! kmssink` and the same idea). A wall composites many tiles in SDL. One scanout plane cannot.
+- OMX (`omxh264dec`). On A733 its DMA-BUF negotiation is broken and the CPU fallback is the expensive path.
+- Shipping the Allwinner `.so` files. H.264 did open this kernel's device (see the spike), and the package still marks libraries closed source. They stay out of the image and the repository.
+- Mapping `/dev/cedar_dev` into the add-on while decode stays on FFmpeg. `devices: /dev/dri` plus `video: true` is enough for the panel.
+
+A later hardware path, if both codecs can produce linear YUV, would keep libavformat for demux, call `libvdecoder` for the bitstream, and copy linear YUV into the frame slot. That is the same baseline as Pi 4 H.264 (system memory, not zero-copy). `cedar_dev_ve2` is the encoder and is irrelevant here.
+
+### Cedar spike
+
+Run on this board with Radxa `libcedarc-dev_2.0.0_arm64.deb` (package version 1.0.7, the t736/A733 build) and that package's `vdecoderdemo`. The container was given `/dev/cedar_dev`, `/dev/sunxi_soc_info`, and `/dev/dma_heap/system` plus `reserved`. The clip was two seconds of 1080p30 `testsrc`: a synthetic bitstream, easier than a camera, so the timings are not wall capacity.
+
+**H.264 passed.** 59 displayed frames, pixel format YUV420P, geometry 1920×1088 (macroblock padding). The file was 184,872,960 bytes, which is 59 × 1920 × 1088 × 3/2. That is linear planar YUV, not LBC. The `cedar_dev` interrupt count rose by 59, one per displayed frame. `cedar_dev_ve2` stayed at 0. The library reported IC version `0x3331000021320` through this kernel's `sunxi_ve`, so the ioctl ABI matched for H.264. One session cost about 1 second for those 59 frames. Two, four, and eight processes at once all exited 0. At eight-wide, 20 frames took about 3 seconds each: the engine slowed and did not wedge. No failure count was found at or below eight, so this is not a Pi-style cap of one.
+
+**HEVC did not.** The same tool, codec format 2, aborted twice with a glibc `sysmalloc` assertion during init (exit 133). The output file was a partial write, not a whole frame. The decoder interrupt rose by 2 on each attempt, not once per frame.
+
+FFmpeg 8 in the add-on image decoded the same H.264 clip in software in 0.974 seconds of wall time (`utime` 1.46 seconds), about 2× realtime. That only shows the synthetic clip is cheap. It does not say how many camera streams the 4 GB board can hold.
+
+The gate required both codecs to emit linear frames. HEVC did not, so there is no Cedar decode method, no new OpenAPI path string, and no `/dev/cedar_dev` in the add-on. Shipping decode stays on software.
+
+### Capacity
+
+Software H.264 on two A76 cores and 4 GB is a small number of 1080p streams, not a 3×3 wall. Use camera substreams. HEVC in software is the heavier case, and the hardware HEVC attempt above did not produce frames. The synthetic-clip timings are not a substitute for a camera measurement.
+
 ## Capacity Guidance
 
 Rough expectations to communicate in the UI, to be replaced with measured numbers once there is something to measure:
@@ -155,9 +206,10 @@ Rough expectations to communicate in the UI, to be replaced with measured number
 | Pi 5, H.264 1080p, software | A small number of streams; scales with core count |
 | Pi 5, 4K60 HEVC | One stream, comfortably |
 | Pi 4, H.264 1080p, hardware | A few streams; the block is old and 1080p-class |
+| Orange Pi 4 Pro, H.264 or HEVC 1080p, software | A small number of H.264 streams on 2× A76 and 4 GB; not a 3×3 wall. HEVC is heavier. Use substreams. |
 | Any model, upload bandwidth | The per-frame copy is proportional to resolution × frame rate × stream count |
 
-Two levers reduce load substantially and should be offered: request a lower sub-stream from cameras that provide one (nearly all IP cameras do), and prefer HEVC where the source can be configured.
+Two levers reduce load substantially and should be offered: request a lower sub-stream from cameras that provide one (nearly all IP cameras do), and prefer HEVC where the host has an HEVC hardware path (Pi 4 and Pi 5). On the Orange Pi 4 Pro, HEVC is software and is the heavier choice.
 
 ## References
 
@@ -168,3 +220,6 @@ Two levers reduce load substantially and should be offered: request a lower sub-
 - [mpv#16136 — Vulkan breaks Pi zero-copy](https://github.com/mpv-player/mpv/issues/16136)
 - [SDL `test/testffmpeg.c`](https://github.com/libsdl-org/SDL/blob/main/test/testffmpeg.c)
 - [Can the Raspberry Pi 5 handle 4K? — Jeff Geerling](https://www.jeffgeerling.com/blog/2024/can-raspberry-pi-5-handle-4k/)
+- [A733 zero-copy hardware decoding — Armbian forums](https://forum.armbian.com/topic/61323-a733-zero-copy-hardware-decoding/)
+- [Cedrus — linux-sunxi.org](https://linux-sunxi.org/Cedrus)
+- [libcedarc 1.0.7 package used for the spike — radxa/allwinner-debian](https://github.com/radxa/allwinner-debian/tree/main/packages/arm64/libcedarc)

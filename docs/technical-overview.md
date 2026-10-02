@@ -277,6 +277,7 @@ Illustrative Linux SBC matrix (see the dedicated doc for full detail):
 |----------|-------|------|-----------|
 | Raspberry Pi 4 / CM4 | Hardware (`h264_v4l2m2m`, no DRM ctx) | Hardware | Stateful V4L2 M2M for H.264; stateless V4L2 request for HEVC |
 | Raspberry Pi 5 | **Software only** | Hardware (4K60) | Stateless V4L2 request only; H.264 block removed from BCM2712 |
+| Orange Pi 4 Pro (A733) | **Software only** | **Software only** | Panel is `sunxi-drm` card0. Cedar (`/dev/cedar_dev`) is present; FFmpeg cannot open it. |
 | Desktop Linux / macOS | Depends | Depends | VA-API, VideoToolbox, or software |
 
 Probe must see an H.264 decode M2M node before claiming H.264 hardware — HEVC/`rpivid` nodes alone are not enough (Pi 5). Capability probing refreshes when `/dev/video*` appears. Workers prefer hardware whenever the host supports the codec; `force_software` is the opt-out.

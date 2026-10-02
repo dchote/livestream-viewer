@@ -48,6 +48,8 @@ Useful log clues include:
 
 The management page can continue working even when physical display output fails. Raspberry Pi running the Home Assistant add-on is a confirmed working configuration; a blank panel on that host is usually a cable, input, power, or competing display-owner problem rather than missing add-on support.
 
+On an Orange Pi 4 Pro the panel is HDMI on card0. Card1 is the graphics chip and does not drive the display. An empty board name on Stream Sources means the add-on cannot see the host device-tree. Decode still reports software, which is the correct result on that board, not a failed probe.
+
 ## The attached display works, but Preview has no video
 
 1. Close other livestream-viewer Preview tabs.
@@ -113,7 +115,7 @@ A scheduled premiere or event that has not started is not yet a playable livestr
 8. Avoid probing several sources while the wall is in critical use.
 9. After host or container device changes, restart the add-on (or wait for the next capability refresh), then **Probe** the source again. Use **Force hardware decode** only for stubborn VideoToolbox/RTSP cases.
 
-Software status is not itself an error, but several high-resolution software-decoded feeds may exceed a small host’s capacity. **Force software decode** and **Force hardware decode** are mutually exclusive.
+Software status is not itself an error, but several high-resolution software-decoded feeds may exceed a small host’s capacity. On an Orange Pi 4 Pro, H.264 and HEVC are software. A few 1080p streams is the expectation on a 4 GB board, not a 3×3 wall; use camera substreams. **Force software decode** and **Force hardware decode** are mutually exclusive.
 
 ## The tour does not move
 

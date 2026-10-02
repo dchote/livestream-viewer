@@ -2,7 +2,7 @@
 
 **livestream-viewer** is a dedicated, always-on video wall: it renders one or more live streams directly to an attached display using hardware-accelerated decoding and GPU compositing, and it is configured entirely from a web interface. There is no browser kiosk and no requirement for a desktop environment — when display output is enabled, the application owns the panel.
 
-**Status: Display engine and control plane implemented** — Sources, display strategy, ingest, SDL compositing, Preview MJPEG, and the Vue editors can be built and run. The Home Assistant add-on is confirmed working on Raspberry Pi, including full-screen KMSDRM output to an attached panel. Use `-display=true` for a windowed SDL surface; `-display=false` keeps the API and scheduler without opening a window.
+**Status: Display engine and control plane implemented** — Sources, display strategy, ingest, SDL compositing, Preview MJPEG, and the Vue editors can be built and run. The Home Assistant add-on is confirmed working on Raspberry Pi, including full-screen KMSDRM output to an attached panel. Orange Pi 4 Pro (Allwinner A733) on 8WI OS uses that same panel path and reports software decode; its Video Engine is not reachable from FFmpeg. Use `-display=true` for a windowed SDL surface; `-display=false` keeps the API and scheduler without opening a window.
 
 The project is structured as two cooperating planes inside a single Go binary: a **display engine** that decodes and composites video onto the physical output, and a **control plane** (REST API plus embedded Vue 3 + Vuetify UI) that manages sources, layouts, and scheduling. Like [go-mumble-server](https://github.com/dchote/go-mumble-server), the repository doubles as a Home Assistant add-on repository for one-click install on Home Assistant OS.
 
@@ -16,7 +16,7 @@ livestream-viewer is **platform-agnostic**:
 | **Display output** | Linux DRM/KMS for headless panels; native SDL window on desktop Linux and macOS for development |
 | **Optimised for** | Low-cost and embedded hosts (Raspberry Pi and similar SBCs) — hardware decode when available, honest software-fallback reporting when not |
 
-Raspberry Pi running the Home Assistant add-on is a confirmed production host. Other constrained boards remain important optimisation targets, not a hard dependency. You can develop and operate the management plane without dedicated hardware on the desk.
+Raspberry Pi running the Home Assistant add-on is a confirmed production host. Orange Pi 4 Pro is a known software-decode host: HDMI works through the existing add-on, and H.264 and HEVC stay on the CPU. Other constrained boards remain important optimisation targets, not a hard dependency. You can develop and operate the management plane without dedicated hardware on the desk.
 
 ## Motivation
 

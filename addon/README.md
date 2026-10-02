@@ -2,7 +2,7 @@
 
 Turn a display connected to your Home Assistant host into a dedicated video wall for cameras, YouTube livestreams, web streams, and uploaded video files.
 
-The add-on is confirmed working on Raspberry Pi Home Assistant hosts with an attached display.
+The add-on is confirmed working on Raspberry Pi Home Assistant hosts with an attached display. On an Orange Pi 4 Pro it drives HDMI the same way and decodes in software.
 
 Use **Open Web UI** to add your video sources, choose what appears on the display, and monitor the wall from another computer or tablet.
 
@@ -35,6 +35,8 @@ Your settings, uploaded files, and accounts are kept when the add-on restarts or
 6. Open **Preview** to confirm what is being sent to the attached display.
 
 On Raspberry Pi 4 / CM4 hosts, Stream Sources should show **Decode: H.264 hardware (v4l2m2m)** when the supervisor maps `/dev/video*`. After an update that adds those devices, restart the add-on if needed, then **Probe** sources again.
+
+On an Orange Pi 4 Pro, Stream Sources shows **Decode: H.264 software · HEVC software**. That is expected: the Video Engine is not available to FFmpeg. HDMI is `/dev/dri/card0`. Card1 is the GPU and has no connector, so the add-on leaves card selection to SDL.
 
 ## YouTube
 
